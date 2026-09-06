@@ -93,6 +93,7 @@ The dashboard binds to `127.0.0.1:8765` by default. It reads
 `artifacts/<case>/runs/<run_id>/` via the `current` symlink. If the UI shows
 **No cases**, restart the dashboard after `maads run` starts, or check
 `http://127.0.0.1:8765/api/health` for the artifact root and detected cases.
+Interactive API docs: `http://127.0.0.1:8765/api/docs` (OpenAPI schema at `/api/openapi.json`).
 Communications contain full prompts — local use only.
 
 ## Tests

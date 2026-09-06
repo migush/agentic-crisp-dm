@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loading } from "../components/Loading";
 import { useCaseResults, useCases } from "../hooks/useCasePolling";
-import { prettyCase } from "../shared/format";
+import { formatDuration, prettyCase } from "../shared/format";
 import { openStyledReport } from "../shared/reportPdf";
 import { useTheme } from "../shared/theme";
 import type { RunResult } from "../shared/types";
@@ -123,6 +123,12 @@ function fmt(n: number): string {
   if (Math.abs(n) >= 1000)
     return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return n.toFixed(4);
+}
+
+function fmtWhen(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 function metricKeys(runs: RunResult[]): string[] {
@@ -316,30 +322,22 @@ export function Results() {
               );
             })}
 
-            {/* Primary score */}
+            {/* Success threshold (case goal) */}
             <div className={labelCell}>
-              {clean("Target metric")}
+              {clean("Success threshold")}
               {runs[0]?.score_metric ? ` (${runs[0].score_metric})` : ""}
+              <div className="mt-0.5 font-normal normal-case text-[10px] text-slate-500">
+                goal from case config
+              </div>
             </div>
             {runs.map((r) => (
               <div key={r.run_id} className={cell}>
-                {r.score != null ? (
-                  <span className="font-semibold tabular-nums">
-                    {fmt(r.score)}
+                {r.success_threshold != null ? (
+                  <span className="font-semibold tabular-nums text-slate-400">
+                    ≥ {fmt(r.success_threshold)}
                   </span>
                 ) : (
                   "—"
-                )}
-                {r.meets_threshold != null && r.success_threshold != null && (
-                  <span
-                    className={`ml-2 text-xs font-semibold ${
-                      r.meets_threshold
-                        ? "text-status-complete"
-                        : "text-amber-400"
-                    }`}
-                  >
-                    {r.meets_threshold ? "✓" : "✗"} {r.success_threshold}
-                  </span>
                 )}
               </div>
             ))}
@@ -472,6 +470,50 @@ export function Results() {
             {runs.map((r) => (
               <div key={r.run_id} className={`${cell} text-slate-300`}>
                 {r.missing_summary ?? "—"}
+              </div>
+            ))}
+
+            {/* Execution */}
+            <div
+              className="border-b border-surface-border/50 bg-surface/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500"
+              style={{ gridColumn: `1 / span ${runs.length + 1}` }}
+            >
+              Execution
+            </div>
+            <div className={labelCell}>{clean("Duration")}</div>
+            {runs.map((r) => {
+              const min = Math.min(
+                ...runs
+                  .map((x) => x.duration_ms ?? Infinity)
+                  .filter((n) => Number.isFinite(n)),
+              );
+              const isFastest =
+                r.duration_ms != null && r.duration_ms === min;
+              return (
+                <div
+                  key={r.run_id}
+                  className={`${cell} tabular-nums ${
+                    isFastest ? "font-bold text-status-complete" : ""
+                  }`}
+                >
+                  {r.duration_ms != null
+                    ? formatDuration(r.duration_ms)
+                    : r.status === "running"
+                      ? "running…"
+                      : "—"}
+                </div>
+              );
+            })}
+            <div className={labelCell}>{clean("Started")}</div>
+            {runs.map((r) => (
+              <div key={r.run_id} className={`${cell} text-slate-300`}>
+                {fmtWhen(r.started_at)}
+              </div>
+            ))}
+            <div className={labelCell}>{clean("Ended")}</div>
+            {runs.map((r) => (
+              <div key={r.run_id} className={`${cell} text-slate-300`}>
+                {r.status === "running" ? "—" : fmtWhen(r.ended_at)}
               </div>
             ))}
 

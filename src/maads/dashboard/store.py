@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,33 @@ def read_trace(artifact_dir: Path) -> TraceRun:
     if not path.is_file():
         raise FileNotFoundError("trace.json not found")
     return TraceRun.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def run_duration_ms(
+    artifact_dir: Path,
+    *,
+    started_at: str | None = None,
+    ended_at: str | None = None,
+) -> int | None:
+    """Wall-clock run duration from manifest, trace, reports, or timestamps."""
+    from maads.artifacts_timing import resolve_run_timing
+
+    manifest = load_manifest(artifact_dir)
+    if manifest.get("duration_ms") is not None:
+        return int(manifest["duration_ms"])
+
+    timing = resolve_run_timing(artifact_dir)
+    if timing.get("duration_ms") is not None:
+        return int(timing["duration_ms"])
+
+    if started_at and ended_at:
+        try:
+            start = datetime.fromisoformat(started_at)
+            end = datetime.fromisoformat(ended_at)
+            return int((end - start).total_seconds() * 1000)
+        except ValueError:
+            pass
+    return None
 
 
 def read_trace_optional(artifact_dir: Path, *, case_id: str = "") -> TraceRun:

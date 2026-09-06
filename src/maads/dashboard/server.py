@@ -19,7 +19,17 @@ def get_artifact_root() -> Path:
 
 
 def create_app(static_dir: Path | None = None) -> FastAPI:
-    app = FastAPI(title="MAADS Trace Dashboard", version="0.1.0")
+    app = FastAPI(
+        title="MAADS Trace Dashboard API",
+        version="0.1.0",
+        description=(
+            "HTTP API for the MAADS trace monitoring dashboard: case discovery, "
+            "run artifacts, live polling, reports, and pipeline launch."
+        ),
+        openapi_url="/api/openapi.json",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

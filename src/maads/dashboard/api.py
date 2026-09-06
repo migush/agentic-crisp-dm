@@ -64,11 +64,18 @@ def get_case_results(case_id: str) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for run in store.list_runs(case_path):
+        artifact_dir = Path(run["artifact_dir"])
         row: dict[str, Any] = {
             "run_id": run.get("run_id"),
             "llm_model": run.get("model") or "default (.env)",
             "status": run.get("status"),
             "started_at": run.get("started_at"),
+            "ended_at": run.get("ended_at"),
+            "duration_ms": store.run_duration_ms(
+                artifact_dir,
+                started_at=run.get("started_at"),
+                ended_at=run.get("ended_at"),
+            ),
             "chosen_model": None,
             "chosen_params": {},
             "modeling_technique": None,
@@ -91,7 +98,7 @@ def get_case_results(case_id: str) -> list[dict[str, Any]]:
             "halt_reason": None,
             "total_tokens": None,
         }
-        state_path = Path(run["artifact_dir"]) / "final_state.json"
+        state_path = artifact_dir / "final_state.json"
         if state_path.is_file():
             try:
                 state = CrispDMState.model_validate_json(
@@ -104,8 +111,10 @@ def get_case_results(case_id: str) -> list[dict[str, Any]]:
                 sc = state.config.success_criterion
                 bundle = cm.evaluation_bundle if cm else None
                 score = None
-                if cm is not None:
-                    score = cm.holdout_score if cm.holdout_score is not None else cm.cv_score
+                if bundle and bundle.metrics:
+                    raw_metric = bundle.metrics.get(sc.metric)
+                    if isinstance(raw_metric, (int, float)):
+                        score = float(raw_metric)
                 direction = criterion_direction(sc.metric, sc.direction)
 
                 da = state.dp.derived_attributes or {}

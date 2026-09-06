@@ -24,21 +24,16 @@ import { MaadsLogo } from "./components/MaadsLogo";
 // kept out of the top nav to keep it lean. State + Communications are merged
 // into a single "Inspect" tab with an internal switch.
 const TABS: { id: TabId; label: string; needsCase?: boolean }[] = [
-  // Ordered to follow a 3-person presentation, left to right:
-  // IT (how it's built) → Prompts → Data science (the run & results).
   { id: "home", label: "🏠 Home" },
   { id: "architecture", label: "🦋 Architecture", needsCase: true },
-  { id: "framework", label: "🔬 Framework" },
   { id: "state_shape", label: "🏗️ State Shape" },
-  { id: "failure_modes", label: "🩹 Failures" },
-  { id: "prompts", label: "📝 Prompts" },
   { id: "process", label: "🌸 Process", needsCase: true },
   { id: "inspect", label: "🔎 Inspect", needsCase: true },
   { id: "results", label: "📊 Results" },
 ];
 
 // Tabs whose content depends on the selected case/run. The case & run pickers
-// are only shown on these; static pages (Home, Prompts, Framework, …) hide them.
+// are only shown on these; static pages (Home, State Shape, …) hide them.
 const CASE_TABS: TabId[] = ["overview", "process", "inspect", "architecture"];
 
 function ThemeToggle({

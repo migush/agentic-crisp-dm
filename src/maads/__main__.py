@@ -8,6 +8,7 @@ Subcommands:
     flow plot                           Visualize the CRISP-DM Flow graph.
     dashboard                           Web UI for live trace monitoring.
     artifacts render --run <path>       Regenerate trace markdown/mermaid views.
+    artifacts backfill-timing         Backfill duration on existing run artifacts.
 """
 from __future__ import annotations
 
@@ -145,6 +146,22 @@ def main(argv: list[str] | None = None) -> int:
         "--run", type=Path, required=True,
         help="Run directory (artifacts/<case>/runs/<run_id>).",
     )
+    p_art_backfill = sub_art.add_parser(
+        "backfill-timing",
+        help="Backfill duration_ms and timestamps on existing run artifacts.",
+    )
+    p_art_backfill.add_argument(
+        "--artifact-dir", default="artifacts",
+        help="Root directory containing per-case artifact folders.",
+    )
+    p_art_backfill.add_argument(
+        "--run", type=Path, default=None,
+        help="Optional single run directory to backfill.",
+    )
+    p_art_backfill.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would change without writing files.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -166,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "artifacts" and args.artifacts_cmd == "render":
         return cmd_artifacts_render(args)
+    if args.cmd == "artifacts" and args.artifacts_cmd == "backfill-timing":
+        return cmd_artifacts_backfill_timing(args)
     if args.cmd == "artifacts" and args.artifacts_cmd is None:
         p_art.print_help()
         return 0
@@ -325,6 +344,34 @@ def cmd_artifacts_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_artifacts_backfill_timing(args: argparse.Namespace) -> int:
+    from maads.artifacts_timing import backfill_all_runs, backfill_run_timing
+
+    if args.run:
+        run_dir = Path(args.run)
+        if not run_dir.is_absolute():
+            run_dir = resolve_path(run_dir)
+        if not run_dir.is_dir():
+            print(f"ERROR: run directory not found: {run_dir}", file=sys.stderr)
+            return 1
+        results = [backfill_run_timing(run_dir, dry_run=args.dry_run)]
+    else:
+        artifact_root = resolve_path(args.artifact_dir)
+        results = backfill_all_runs(artifact_root, dry_run=args.dry_run)
+
+    updated = [r for r in results if r["changed"]]
+    print(
+        f"{'Would update' if args.dry_run else 'Updated'} "
+        f"{len(updated)} of {len(results)} run(s)."
+    )
+    for row in updated:
+        timing = row["timing"]
+        dur = timing.get("duration_ms")
+        dur_s = f"{dur // 1000 // 60}m {(dur // 1000) % 60}s" if dur else "n/a"
+        print(f"  {row['run_id']}: {dur_s} ({', '.join(row['changed'])})")
+    return 0
+
+
 def cmd_data_download(args: argparse.Namespace) -> int:
     if args.case:
         download_case_data(args.case,
@@ -358,6 +405,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 
     print(f"Artifact root: {artifact_root.resolve()}")
     print(f"Dashboard:     http://{args.host}:{args.port}/")
+    print(f"API docs:      http://{args.host}:{args.port}/api/docs")
     if static_dir:
         print(f"Frontend:      {static_dir}")
     else:

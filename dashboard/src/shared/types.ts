@@ -164,6 +164,8 @@ export interface RunResult {
   llm_model: string;
   status: string;
   started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
   chosen_model: string | null;
   chosen_params: Record<string, unknown>;
   modeling_technique: string | null;

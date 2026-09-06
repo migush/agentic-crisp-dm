@@ -33,7 +33,8 @@ def build_run_insight(row: dict[str, Any]) -> dict[str, Any]:
     parts: list[str] = []
     flags: list[str] = []
     metric = row.get("score_metric")
-    score = row.get("score")
+    metrics = row.get("metrics") or {}
+    score = metrics.get(metric) if metric else row.get("score")
     thr = row.get("success_threshold")
 
     if score is not None and thr is not None:
@@ -70,22 +71,6 @@ def build_run_insight(row: dict[str, Any]) -> dict[str, Any]:
                 f"({correct}/{total}) across {len(cm)} classes."
             )
 
-    cv = row.get("cv_score")
-    ho = row.get("holdout_score")
-    if cv is not None and ho is not None:
-        gap = (ho - cv) if _lower_better(metric) else (cv - ho)
-        if gap > 0.05:
-            parts.append(
-                f"Possible overfitting: it scored {cv:.3f} during cross-validation "
-                f"but {ho:.3f} on unseen data, so real-world results may be lower."
-            )
-            flags.append("Overfitting risk")
-        else:
-            parts.append(
-                "Cross-validation and unseen-data scores agree, so it should "
-                "hold up on new data."
-            )
-
     if row.get("workflow_complete") is False:
         parts.append("The run did not finish cleanly — treat the result as partial.")
         flags.append("Did not finish")
@@ -101,10 +86,19 @@ def attach_badges(rows: list[dict[str, Any]]) -> None:
     for r in rows:
         r["badges"] = []
 
-    scored = [r for r in rows if isinstance(r.get("score"), (int, float))]
+    def _primary_metric(r: dict[str, Any]) -> float | None:
+        m = r.get("score_metric")
+        if not m:
+            return None
+        v = (r.get("metrics") or {}).get(m)
+        return float(v) if isinstance(v, (int, float)) else None
+
+    scored = [r for r in rows if _primary_metric(r) is not None]
     if scored:
         metric = scored[0].get("score_metric")
-        best = (min if _lower_better(metric) else max)(scored, key=lambda r: r["score"])
+        best = (min if _lower_better(metric) else max)(
+            scored, key=lambda r: _primary_metric(r) or 0.0
+        )
         best["badges"].append("Best score")
 
     costed = [r for r in rows if isinstance(r.get("total_tokens"), (int, float))]

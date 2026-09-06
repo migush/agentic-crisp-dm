@@ -152,6 +152,7 @@ def seal_manifest(
     workflow_complete: bool,
     ml_success: bool,
     halt_reason: str | None,
+    duration_ms: int | None = None,
 ) -> None:
     payload: dict[str, Any] = {}
     if paths.manifest.is_file():
@@ -163,6 +164,8 @@ def seal_manifest(
         "halt_reason": halt_reason,
         "reports_generated_at": payload.get("reports_generated_at"),
     })
+    if duration_ms is not None:
+        payload["duration_ms"] = duration_ms
     paths.manifest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
 

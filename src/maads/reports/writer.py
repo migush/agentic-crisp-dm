@@ -116,12 +116,16 @@ def write_run_reports(
     )
 
     ended_at = datetime.now(timezone.utc).isoformat()
+    duration_ms = analysis.get("duration_ms")
+    if duration_ms is not None:
+        duration_ms = int(duration_ms)
     seal_manifest(
         paths,
         ended_at=ended_at,
         workflow_complete=workflow_complete(state),
         ml_success=ml_run_succeeded(state),
         halt_reason=state.halt_reason,
+        duration_ms=duration_ms,
     )
     manifest = json.loads(paths.manifest.read_text(encoding="utf-8"))
     manifest["reports_generated_at"] = ended_at
