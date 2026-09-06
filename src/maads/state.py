@@ -301,6 +301,11 @@ class CrispDMState(BaseModel):
     log: list[LogEntry] = Field(default_factory=list)
     token_spend: dict[str, int] = Field(default_factory=dict)
     token_spend_by_provider: dict[str, int] = Field(default_factory=dict)
+    # Run-level input/output split, needed for accurate $ cost (input/output
+    # prices differ per model). Optional at the call site for backward
+    # compatibility — see add_tokens().
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
 
     @classmethod
     def from_config(cls, config: CaseConfig) -> "CrispDMState":
@@ -319,8 +324,13 @@ class CrispDMState(BaseModel):
             label=label, from_phase=from_phase, to_phase=to_phase, reason=reason
         ))
 
-    def add_tokens(self, agent: str, n_tokens: int, *, provider: str = "unknown") -> None:
+    def add_tokens(self, agent: str, n_tokens: int, *, provider: str = "unknown",
+                   n_input: int | None = None, n_output: int | None = None) -> None:
         self.token_spend[agent] = self.token_spend.get(agent, 0) + n_tokens
+        if n_input is not None:
+            self.total_input_tokens += n_input
+        if n_output is not None:
+            self.total_output_tokens += n_output
         self.token_spend_by_provider[provider] = (
             self.token_spend_by_provider.get(provider, 0) + n_tokens
         )
