@@ -1,14 +1,10 @@
-# Easy deploy: GitHub change -> MAADS VPS deploy
+# Automatic deploy: master -> MAADS VPS
 
-Goal: a tiny, explicit GitHub change triggers deployment of `main` to the VPS serving `https://maads.mirogeorgiev.eu`.
+Goal: every completed merge or direct push to `master` triggers deployment to the VPS serving `https://maads.mirogeorgiev.eu`.
 
 ## Trigger
 
-Edit this file on GitHub:
-
-- `.deploy/maads-webapp.trigger`
-
-Change `last_requested_utc`, commit directly to `main`, and GitHub Actions runs `.github/workflows/easy-deploy.yml`.
+Merge a pull request into `master` (or push directly to `master`). GitHub Actions then runs `.github/workflows/easy-deploy.yml` for the resulting commit.
 
 The workflow SSHes into the VPS and runs:
 
@@ -29,7 +25,7 @@ Use a dedicated deploy key if possible. Do not paste these values into commits, 
 
 1. Takes a deploy lock so two deploys cannot overlap.
 2. Verifies prerequisites and confirms the repo remote is `git@github.com:migush/agentic-crisp-dm.git`.
-3. Fetches `origin/main` and verifies the requested SHA is on `main`.
+3. Fetches `origin/master` and verifies the requested SHA is on `master`.
 4. Backs up tracked local diff/status under `/root/work/agentic-crisp-dm/backups/deploy/`.
 5. Resets the working tree to the requested commit.
 6. Installs backend dependencies into `.venv`.
@@ -41,13 +37,13 @@ Use a dedicated deploy key if possible. Do not paste these values into commits, 
 ## Manual deploy from the VPS
 
 ```bash
-DEPLOY_BRANCH=main /root/work/deploy/maads-webapp/deploy.sh
+DEPLOY_BRANCH=master /root/work/deploy/maads-webapp/deploy.sh
 ```
 
-Deploy a specific commit that is already on `main`:
+Deploy a specific commit that is already on `master`:
 
 ```bash
-DEPLOY_BRANCH=main DEPLOY_SHA=<commit-sha> /root/work/deploy/maads-webapp/deploy.sh
+DEPLOY_BRANCH=master DEPLOY_SHA=<commit-sha> /root/work/deploy/maads-webapp/deploy.sh
 ```
 
 Preflight only:
@@ -65,10 +61,10 @@ ln -sfn "$(readlink -f /srv/maads-webapp/releases/previous)" /srv/maads-webapp/d
 systemctl restart maads-webapp.service maads-dashboard.service
 ```
 
-Code rollback to a known good commit on `main`:
+Code rollback to a known good commit on `master`:
 
 ```bash
-DEPLOY_BRANCH=main DEPLOY_SHA=<known-good-sha> /root/work/deploy/maads-webapp/deploy.sh
+DEPLOY_BRANCH=master DEPLOY_SHA=<known-good-sha> /root/work/deploy/maads-webapp/deploy.sh
 ```
 
 If a deploy overwrote local tracked edits, inspect backups in:
@@ -77,6 +73,6 @@ If a deploy overwrote local tracked edits, inspect backups in:
 
 ## Notes
 
-- The trigger is intentionally a specific file, not every push to `main`, so normal development merges do not deploy unless the trigger file changes.
+- Every push to `master`, including a completed pull-request merge, starts a deployment. The concurrency group prevents overlapping deployments.
 - The workflow does not expose any new public ports; it uses the existing Caddy and systemd deployment.
 - Untracked local files are not deleted by the deploy script. Tracked local modifications are backed up before reset.

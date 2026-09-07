@@ -3,13 +3,11 @@ name: Easy deploy to MAADS VPS
 on:
   push:
     branches:
-      - main
-    paths:
-      - .deploy/maads-webapp.trigger
+      - master
   workflow_dispatch:
     inputs:
       deploy_ref:
-        description: Commit SHA on main to deploy; defaults to the workflow SHA
+        description: Commit SHA on master to deploy; defaults to the workflow SHA
         required: false
         type: string
 
@@ -27,7 +25,7 @@ jobs:
     timeout-minutes: 20
     env:
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
-      DEPLOY_BRANCH: main
+      DEPLOY_BRANCH: master
       DEPLOY_SHA: ${{ inputs.deploy_ref || github.sha }}
     steps:
       - name: Validate required secrets
