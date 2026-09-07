@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { login, setToken } from "../lib/api";
+import { listStoredKeys, login, setToken } from "../lib/api";
 
 export function LoginPage() {
   const [email, setEmail] = useState("");
@@ -14,7 +14,10 @@ export function LoginPage() {
     try {
       const { access_token } = await login(email, password);
       setToken(access_token);
-      navigate("/profile");
+      // Users with a provider key already set up land on their task
+      // dashboard; first-timers go set one up in Profile first.
+      const storedKeys = await listStoredKeys().catch(() => []);
+      navigate(storedKeys.length > 0 ? "/tasks" : "/profile");
     } catch (err) {
       setError((err as Error).message);
     }
