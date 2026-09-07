@@ -452,6 +452,8 @@ def _handoff_file_response(
     paths = RunPaths(artifact_dir)
     zip_path = handoff_zip_path(paths)
     if not zip_path.is_file():
+        if scope.is_read_only(case_id):
+            raise HTTPException(status_code=404, detail="handoff bundle not available")
         state_path = artifact_dir / "final_state.json"
         if not state_path.is_file():
             raise HTTPException(status_code=404, detail="handoff bundle not available")
