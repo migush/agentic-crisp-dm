@@ -246,3 +246,14 @@ webapp/frontend/dist/
 .tools/
 
 uv.lock
+
+# Local AST / graph tool output (do not commit)
+.depwire/
+graphify-out/
+depwire-output.json
+.atlas/
+atlas.local.toml
+
+# Per-run / per-session local files (do not commit)
+knowledge/
+workflow_state.md

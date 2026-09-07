@@ -1,0 +1,30 @@
+---
+description: Deterministic capabilities, JSON output contracts, and MAADS runtime skills
+globs: src/maads/capabilities/**/*.py,src/maads/output_contracts.py,src/maads/codegen.py,src/maads/tools.py,src/maads/validators.py,skills/**/*.md
+alwaysApply: false
+---
+
+# Capabilities and JSON contracts
+
+Specialist substeps: (1) `execution_evidence` (sandbox Python) (2) LLM `kickoff_substep` unless `execution_authoritative` (3) `apply_response` onto `CrispDMState`.
+
+`PythonExec` (`tools.py`) is a subprocess + wall-clock timeout under `artifact_dir/sandbox`. Trusted local env only — not a security boundary.
+
+Agent replies must validate through `output_contracts.py` (`validate_agent_output` / `normalize_agent_output`). Runtime skill: `skills/json-output-contract/SKILL.md` (JSON object, no markdown fences).
+
+Authored code: `skills/kaggle-submission-contract/SKILL.md` + `skills/leakage-cv-discipline/SKILL.md`. NLP vs tabular branching uses **config signals** (`feature_hints.text_free`, etc.), never case names.
+
+```python
+# ✅ GOOD
+execution = execution_evidence(pyexec, state, substep, artifact_dir)
+data = crew.kickoff_substep(state, substep, execution_evidence=execution)
+apply_response(data, state, substep, execution)
+
+# ❌ BAD — skip schema / apply free-form prose to state
+state.du.notes = llm_text
+# ❌ BAD
+if state.case_id == "disaster_tweets":
+    vectorize()
+```
+
+Do not duplicate MAADS `skills/` into Cursor skills. Cursor skills teach developers working **on** the repo; `skills/` is loaded by the CRISP-DM agents at runtime.

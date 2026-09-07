@@ -1,0 +1,26 @@
+---
+description: Case YAML only — keep agents case-agnostic; feature_hints and success_criterion
+globs: configs/*.yaml,knowledge/*.md,src/maads/data_utils.py,src/maads/knowledge_setup.py,src/maads/config.py
+alwaysApply: false
+---
+
+# Demo cases
+
+A case is `configs/<id>.yaml` (+ optional `knowledge/<id>_experience.md`). Agent/crew/flow code stays generic.
+
+Required YAML fields (see `CaseConfig` in `config.py` and `configs/titanic.yaml`): `case_id`, `kaggle_competition`, `problem_statement`, `problem_type`, `target_column`, `id_column`, `evaluation_metric`, `data.{train_csv,test_csv,sample_submission_csv}`, `feature_hints`, `success_criterion`.
+
+`--case X` loads `configs/X.yaml`. `maads data download --case X` needs `CASE_SHORTHANDS` in `data_utils.py`. Arbitrary Kaggle slugs use `--competition`.
+
+```yaml
+# ✅ GOOD — case-specific knowledge in YAML
+feature_hints:
+  categorical: [Pclass, Sex, Embarked]
+success_criterion:
+  metric: accuracy
+  threshold: 0.77
+
+# ❌ BAD — in agents.py / capabilities
+if case_id == "titanic":
+    encode_sex()
+```

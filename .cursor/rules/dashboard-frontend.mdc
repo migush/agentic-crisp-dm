@@ -1,0 +1,23 @@
+---
+description: Vite React 18 trace UI in dashboard/ — tab routing, TanStack Query, hosted vs local
+globs: dashboard/src/**/*.{ts,tsx},dashboard/vite.config.ts,dashboard/package.json
+alwaysApply: false
+---
+
+# Trace dashboard frontend
+
+Vite 6 + React 18 + TanStack Query v5 + Tailwind 3 + Recharts + `@xyflow/react`. **No react-router** — tabs are `useState<TabId>` in `App.tsx`.
+
+- `vite.config.ts`: `base: "./"` so one build works at `/` and `/dashboard/`. Dev port **5173**, proxy `/api` → `127.0.0.1:8765`.
+- Hosted detection: `shared/api.ts` `MOUNT_PREFIX = "/dashboard"`, `isHosted`. Launch tab: `Launch` locally, `LaunchUnavailable` when hosted.
+- Data: `hooks/useCasePolling.ts` (2s refetch). Types in `shared/types.ts`. Theme: `pink` | `biz` via `shared/theme.tsx`.
+- Token key in this SPA is `maads_access_token`. Webapp uses `maads.accessToken` — **they do not match**. Hosted auth relies on HttpOnly `maads_session` cookie; do not “fix” keys without updating both sides and tests.
+- No eslint/prettier. Typecheck with `npm run build` (`tsc && vite build`).
+
+```tsx
+// ✅ GOOD
+{tab === "launch" ? (isHosted ? <LaunchUnavailable /> : <Launch />) : null}
+
+// ❌ BAD — do not add react-router to this SPA
+<BrowserRouter><Routes/></BrowserRouter>
+```
