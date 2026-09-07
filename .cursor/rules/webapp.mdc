@@ -8,10 +8,10 @@ alwaysApply: false
 
 Separate from the local trace dashboard. Owns origin `maads.mirogeorgiev.eu`. Port **8766**. Mounts `maads.dashboard` at `/dashboard` with auth + per-user artifact roots.
 
-- Backend: `webapp/backend/app.py` `create_app`. SQLite `data/webapp.db` (`db.py`, no ORM). Auth: argon2 + JWT HS256 12h + cookie `maads_session`.
+- Backend: `webapp/backend/app.py` `create_app`. SQLite `data/webapp.db` (`db.py`, no ORM). Auth: username-only JWT HS256 12h + cookie `maads_session` (no login password). Live DBs with `email`/`password_hash` are migrated in place (`email` → `username`, preserve `id`); never delete the SQLite file.
 - Prod requires `WEBAPP_JWT_SECRET`. Local tests/dev: `WEBAPP_ALLOW_DEV_SECRET=1` and `WEBAPP_INSECURE_COOKIES=1`.
 - CORS allowlist `WEBAPP_ALLOWED_ORIGINS` (default that host), `allow_credentials=True`. Never copy dashboard’s `allow_origins=["*"]` here.
-- Keys: ciphertext only (`routes_keys.py`). Client encrypts in `frontend/src/lib/crypto.ts` (PBKDF2 + AES-GCM). Run launcher decrypts in memory, strips parent provider env, writes `--artifact-dir` under `data/users/<id>/artifacts`.
+- Keys: OpenAI only, ciphertext only (`routes_keys.py`). Client encrypts in `frontend/src/lib/crypto.ts` (PBKDF2 + AES-GCM). `POST /api/models` lists chat models for the just-decrypted key. Run launcher injects `OPENAI_API_KEY` + `MODEL` into the child env, writes `--artifact-dir` under `data/users/<id>/artifacts`.
 - Frontend: React Router (`/login` `/register` `/profile` `/tasks`). Vite port **5174**, proxy `/api` → `:8766`. Token key `maads.accessToken`.
 - Do not split webapp vs dashboard at the reverse proxy (both claim `/` and `/api`). Caddy should proxy the whole origin to `:8766`.
 - Tests: `pytest tests/webapp/ -q` after `pip install -e ".[webapp,dashboard]"`.

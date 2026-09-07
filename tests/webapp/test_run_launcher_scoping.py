@@ -30,8 +30,8 @@ def make_user(db_path, user_id: int) -> None:
     """tasks.user_id is a foreign key, so the account row has to exist first."""
     with db_module.get_conn(db_path) as conn:
         conn.execute(
-            "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, 'x', '2026-01-01')",
-            (user_id, f"u{user_id}@example.com"),
+            "INSERT INTO users (id, username, created_at) VALUES (?, ?, '2026-01-01')",
+            (user_id, f"user{user_id}"),
         )
 
 

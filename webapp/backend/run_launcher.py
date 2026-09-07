@@ -23,10 +23,9 @@ from .db import get_conn
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Provider -> the env var the maads CLI/pipeline reads for that provider's key.
+# Hosted product is OpenAI-only. Inject OPENAI_API_KEY + MODEL into the child.
 PROVIDER_ENV_VAR = {
     "openai": "OPENAI_API_KEY",
-    "ollama_cloud": "OLLAMA_API_KEY",
 }
 
 

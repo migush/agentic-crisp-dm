@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 import os
 
 from fastapi import APIRouter, Cookie, Header, HTTPException, Response
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
-from .auth import decode_access_token, hash_password, issue_access_token, verify_password
+from .auth import decode_access_token, issue_access_token
 from .db import get_conn
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -19,6 +19,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # those work without exposing it to JS. Same token, same TTL, same secret.
 SESSION_COOKIE = "maads_session"
 _COOKIE_MAX_AGE = 12 * 60 * 60  # matches _ACCESS_TOKEN_TTL in auth.py
+
+# New accounts: 3–32 chars, letters/digits/dot/underscore/hyphen.
+_USERNAME_PATTERN = r"^[A-Za-z0-9._-]+$"
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -35,13 +38,13 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8)
+    username: str = Field(min_length=3, max_length=32, pattern=_USERNAME_PATTERN)
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+    # Length-only so migrated rows whose username is a former email (with '@')
+    # can still sign in. New registrations are restricted by RegisterRequest.
+    username: str = Field(min_length=3, max_length=254)
 
 
 class TokenResponse(BaseModel):
@@ -54,11 +57,11 @@ def register(body: RegisterRequest, response: Response) -> TokenResponse:
     with get_conn() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
-                (body.email, hash_password(body.password), datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO users (username, created_at) VALUES (?, ?)",
+                (body.username, datetime.now(timezone.utc).isoformat()),
             )
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=409, detail="An account with this email already exists.") from None
+            raise HTTPException(status_code=409, detail="An account with this username already exists.") from None
         user_id = cur.lastrowid
     token = issue_access_token(user_id)
     _set_session_cookie(response, token)
@@ -68,9 +71,9 @@ def register(body: RegisterRequest, response: Response) -> TokenResponse:
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, response: Response) -> TokenResponse:
     with get_conn() as conn:
-        row = conn.execute("SELECT id, password_hash FROM users WHERE email = ?", (body.email,)).fetchone()
-    if row is None or not verify_password(body.password, row["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (body.username,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Unknown username.")
     token = issue_access_token(row["id"])
     _set_session_cookie(response, token)
     return TokenResponse(access_token=token)

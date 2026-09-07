@@ -1,30 +1,31 @@
-"""Shared setup for the account-backend tests."""
+"""Webapp tests: allow the published JWT fallback and stub OpenAI Models API."""
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
-import webapp.backend.paths as paths_module
+from tests.webapp.openai_stub import DEFAULT_LIVE_MODEL_IDS, FakeOpenAI
+
+# Must be set before webapp.backend.app is imported (create_app asserts this).
+os.environ.setdefault("WEBAPP_ALLOW_DEV_SECRET", "1")
+os.environ.setdefault("WEBAPP_INSECURE_COOKIES", "1")
 
 
 @pytest.fixture(autouse=True)
-def webapp_test_env(monkeypatch, tmp_path):
-    # create_app() refuses to start on the published fallback JWT secret; tests
-    # opt in explicitly rather than each setting a real one.
-    monkeypatch.setenv("WEBAPP_ALLOW_DEV_SECRET", "1")
-    # TestClient speaks plain HTTP, so a Secure cookie would never be stored.
-    monkeypatch.setenv("WEBAPP_INSECURE_COOKIES", "1")
-    # Keep per-user artifact roots out of the real repo's data/ directory.
-    monkeypatch.setattr(
-        paths_module,
-        "user_artifact_root",
-        lambda user_id: _mkdir(tmp_path / "users" / str(user_id) / "artifacts"),
-    )
-    monkeypatch.setattr(
-        paths_module, "demo_artifact_root", lambda: _mkdir(tmp_path / "demo"),
-    )
-
-
-def _mkdir(path):
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def stub_openai_models(monkeypatch):
+    FakeOpenAI.live_ids = list(DEFAULT_LIVE_MODEL_IDS)
+    FakeOpenAI.extra_ids = [
+        "text-embedding-3-small",
+        "whisper-1",
+        "tts-1",
+        "gpt-image-1",
+        "omni-moderation-latest",
+        "gpt-4o-realtime-preview",
+        "gpt-4o-transcribe",
+    ]
+    FakeOpenAI.error = None
+    FakeOpenAI.last_api_key = None
+    monkeypatch.setattr("webapp.backend.openai_models.OpenAI", FakeOpenAI)
+    return FakeOpenAI

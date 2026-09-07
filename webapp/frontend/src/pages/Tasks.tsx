@@ -2,23 +2,43 @@ import { FormEvent, useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { decryptApiKey } from "../lib/crypto";
 import {
+  fetchLiveModels,
   fetchTaskSpend,
   launchTask,
   listStoredKeys,
   listTasks,
+  LiveModel,
   StoredKey,
   TaskSummary,
   TokenSpendEvent,
+  upsertStoredKey,
 } from "../lib/api";
+
+const HOSTED_PROVIDER = "openai";
+
+function openaiBlob(stored: StoredKey, selectedModel: string) {
+  return {
+    provider: HOSTED_PROVIDER,
+    selected_model: selectedModel,
+    ciphertext_b64: stored.ciphertext_b64,
+    iv_b64: stored.iv_b64,
+    kdf_salt_b64: stored.kdf_salt_b64,
+    kdf_params_json: stored.kdf_params_json,
+  };
+}
 
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [storedKeys, setStoredKeys] = useState<StoredKey[]>([]);
-  const [provider, setProvider] = useState("");
   const [caseName, setCaseName] = useState("titanic");
   const [passphrase, setPassphrase] = useState("");
+  const [decryptedApiKey, setDecryptedApiKey] = useState<string | null>(null);
+  const [models, setModels] = useState<LiveModel[]>([]);
+  const [modelId, setModelId] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [spendByTask, setSpendByTask] = useState<Record<number, TokenSpendEvent[]>>({});
+
+  const openaiKey = storedKeys.find((k) => k.provider === HOSTED_PROVIDER);
 
   function refreshTasks() {
     listTasks().then(setTasks);
@@ -26,33 +46,69 @@ export function TasksPage() {
 
   useEffect(() => {
     refreshTasks();
-    listStoredKeys().then((keys) => {
-      setStoredKeys(keys);
-      if (keys[0]) setProvider(keys[0].provider);
-    });
+    listStoredKeys().then(setStoredKeys);
   }, []);
+
+  async function persistSelectedModel(stored: StoredKey, nextModel: string) {
+    if (!nextModel || stored.selected_model === nextModel) {
+      return;
+    }
+    const saved = await upsertStoredKey(openaiBlob(stored, nextModel));
+    setStoredKeys((prev) => [...prev.filter((k) => k.provider !== HOSTED_PROVIDER), saved]);
+  }
+
+  async function onUnlock(e: FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    if (!openaiKey) {
+      setStatus("No stored OpenAI key — set one up in your profile first.");
+      return;
+    }
+    let decrypted: string;
+    try {
+      decrypted = await decryptApiKey(openaiKey, passphrase);
+    } catch {
+      setStatus("Couldn't decrypt your key — check your passphrase.");
+      return;
+    }
+    try {
+      const live = await fetchLiveModels(decrypted);
+      if (live.length === 0) {
+        setStatus("This API key has no chat models available.");
+        return;
+      }
+      const pref = live.some((m) => m.id === openaiKey.selected_model)
+        ? openaiKey.selected_model
+        : live[0].id;
+      setDecryptedApiKey(decrypted);
+      setModels(live);
+      setModelId(pref);
+      setPassphrase("");
+      await persistSelectedModel(openaiKey, pref);
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
 
   async function onLaunch(e: FormEvent) {
     e.preventDefault();
     setStatus(null);
-    const stored = storedKeys.find((k) => k.provider === provider);
-    if (!stored) {
-      setStatus("No stored key for this provider — set one up in your profile first.");
+    if (!openaiKey || !decryptedApiKey || !modelId) {
+      setStatus("Unlock your key and pick a model first.");
       return;
     }
     try {
-      const decryptedApiKey = await decryptApiKey(stored, passphrase);
       await launchTask({
         case_name: caseName,
-        provider,
-        model_id: stored.selected_model,
+        provider: HOSTED_PROVIDER,
+        model_id: modelId,
         decrypted_api_key: decryptedApiKey,
       });
-      setPassphrase("");
-      setStatus(`Launched ${caseName} on ${stored.selected_model}.`);
+      await persistSelectedModel(openaiKey, modelId);
+      setStatus(`Launched ${caseName} on ${modelId}.`);
       refreshTasks();
-    } catch {
-      setStatus("Couldn't decrypt your key — check your passphrase.");
+    } catch (err) {
+      setStatus((err as Error).message);
     }
   }
 
@@ -65,48 +121,61 @@ export function TasksPage() {
     <div className="mx-auto mt-16 max-w-2xl space-y-8">
       <div>
         <h1 className="mb-3 text-xl font-semibold">Launch a task</h1>
-        <form onSubmit={onLaunch} className="space-y-3">
-          <label className="block text-sm">
-            Case
-            <select
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
-              value={caseName}
-              onChange={(e) => setCaseName(e.target.value)}
-            >
-              <option value="titanic">titanic</option>
-              <option value="house_prices">house_prices</option>
-              <option value="disaster_tweets">disaster_tweets</option>
-            </select>
-          </label>
-          <label className="block text-sm">
-            Provider (using your stored key)
-            <select
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-            >
-              {storedKeys.map((k) => (
-                <option key={k.provider} value={k.provider}>
-                  {k.provider} ({k.selected_model})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm">
-            Passphrase (to unlock your key for this run only)
-            <input
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
-              type="password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              required
-            />
-          </label>
-          {status && <p className="text-sm text-slate-300">{status}</p>}
-          <button className="w-full rounded bg-sky-600 p-2 font-medium hover:bg-sky-500" type="submit">
-            Launch
-          </button>
-        </form>
+        {decryptedApiKey === null ? (
+          <form onSubmit={onUnlock} className="space-y-3">
+            <p className="text-sm text-slate-400">
+              Unlock your stored OpenAI key to load the models that key can use.
+            </p>
+            <label className="block text-sm">
+              Passphrase (to unlock your key for this session)
+              <input
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
+                type="password"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                required
+              />
+            </label>
+            {status && <p className="text-sm text-slate-300">{status}</p>}
+            <button className="w-full rounded bg-sky-600 p-2 font-medium hover:bg-sky-500" type="submit">
+              Unlock
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={onLaunch} className="space-y-3">
+            <label className="block text-sm">
+              Case
+              <select
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
+                value={caseName}
+                onChange={(e) => setCaseName(e.target.value)}
+              >
+                <option value="titanic">titanic</option>
+                <option value="house_prices">house_prices</option>
+                <option value="disaster_tweets">disaster_tweets</option>
+              </select>
+            </label>
+            <label className="block text-sm">
+              Model
+              <select
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                required
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {status && <p className="text-sm text-slate-300">{status}</p>}
+            <button className="w-full rounded bg-sky-600 p-2 font-medium hover:bg-sky-500" type="submit">
+              Launch
+            </button>
+          </form>
+        )}
       </div>
 
       <div>

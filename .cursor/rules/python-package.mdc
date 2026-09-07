@@ -10,7 +10,7 @@ alwaysApply: false
 - CLI is `python -m maads` → `maads.__main__:main`. Console script `maads` is the same.
 - Subcommands that exist: `run`, `data download`, `flow plot`, `dashboard`, `artifacts render`, `artifacts backfill-timing`. Do not invent others.
 - Ship YAML/prompts via package data (`pyproject.toml` `[tool.setuptools.package-data]`). Load them with existing loaders (`config.py`, `importlib.resources`), not ad-hoc repo-relative paths that break when installed.
-- Optional extras: `[dev]` pytest+coverage; `[dashboard]` FastAPI+uvicorn; `[webapp]` FastAPI+uvicorn+argon2-cffi+PyJWT. `webapp/` is **not** inside the setuptools package (`where=["src"]`).
+- Optional extras: `[dev]` pytest+coverage; `[dashboard]` FastAPI+uvicorn; `[webapp]` FastAPI+uvicorn+PyJWT. `webapp/` is **not** inside the setuptools package (`where=["src"]`).
 - Pydantic v2: `model_dump_json()`, `model_validate()`. Never `.dict()` / `.json()` (v1).
 - No ruff/black/mypy in this repo. Do not add formatter config unless the user asks. Validate with pytest.
 

@@ -1,6 +1,6 @@
 # maads account product (webapp/)
 
-Adds accounts, BYO LLM provider keys, and per-task cost tracking on top of
+Adds accounts, BYO OpenAI keys, and per-task cost tracking on top of
 the existing `maads` pipeline, served at `https://maads.mirogeorgiev.eu`.
 
 This app owns the origin and **mounts the existing trace dashboard**
@@ -30,12 +30,15 @@ repo's own `artifacts/` tree is additionally exposed to every account as
 
 ## Layout
 
-- `backend/` — FastAPI app: auth (argon2 + JWT), ciphertext-only key storage,
-  task launch/spend reporting, per-user artifact roots (`paths.py`). SQLite
-  file at `data/webapp.db` (gitignored).
+- `backend/` — FastAPI app: username-only JWT auth, ciphertext-only OpenAI
+  key storage, live model listing (`POST /api/models`), task launch/spend
+  reporting, per-user artifact roots (`paths.py`). SQLite file at
+  `data/webapp.db` (gitignored). `init_db` migrates a live `users` table in
+  place (`email` → `username`, preserve `id`); do not delete the database.
 - `frontend/` — React + TypeScript + Vite + Tailwind SPA. All API-key
   encryption/decryption happens here via the Web Crypto API
-  (`src/lib/crypto.ts`) — the backend never sees a plaintext provider key.
+  (`src/lib/crypto.ts`) — the backend never sees a plaintext provider key
+  except transiently at launch / model list.
 
 ## Running locally
 
@@ -74,21 +77,26 @@ Environment variables:
 ## Security model (read before deploying)
 
 Sessions use a 12h HS256 JWT, returned to the account SPA as a bearer token
-*and* set as an `HttpOnly` cookie. The cookie exists because the trace
-dashboard downloads handoff zips through plain `<a download>` links and embeds
-report figures as `<img src>`, neither of which can carry an `Authorization`
-header. There is no revocation list — logout clears the cookie and the local
-token, but an already-issued JWT stays valid until it expires.
+*and* set as an `HttpOnly` cookie. Register and login take only a username
+(3–32 chars for new accounts: `[A-Za-z0-9._-]`). There is no login password —
+anyone who knows a username can open that account. The cookie exists because
+the trace dashboard downloads handoff zips through plain `<a download>` links
+and embeds report figures as `<img src>`, neither of which can carry an
+`Authorization` header. There is no revocation list — logout clears the cookie
+and the local token, but an already-issued JWT stays valid until it expires.
 
-The provider API key is encrypted client-side (AES-GCM, key derived via
-PBKDF2 from a user-chosen passphrase) before it ever reaches the backend —
-the backend and its SQLite DB only ever hold ciphertext. The one point where
-plaintext exists server-side is transient: launching a task
-(`POST /api/tasks`) sends the just-decrypted key once over HTTPS, and
-`run_launcher.py` holds it only in memory for the lifetime of the `maads run`
-subprocess, injected as an env var and never logged or persisted. Losing the
-passphrase means the stored key is unrecoverable by design — there is no
-reset path, only delete-and-re-add.
+The OpenAI API key is encrypted client-side (AES-GCM, key derived via PBKDF2
+from a user-chosen passphrase) before it ever reaches the backend — the
+backend and its SQLite DB only ever hold ciphertext, unique per
+`(user_id, provider=openai)`. The plaintext key is sent only over HTTPS to
+`POST /api/models` (to list chat models for that key) and `POST /api/tasks`
+(to launch). `run_launcher.py` injects `OPENAI_API_KEY` and `MODEL` into the
+child env for the lifetime of `maads run` and never logs or persists them.
+Losing the passphrase means the stored key is unrecoverable by design — there
+is no reset path, only delete-and-re-add.
+
+Hosted product is OpenAI-only. Ollama stays in the standalone pipeline /
+local dashboard catalog.
 
 ## Deployment
 
@@ -105,3 +113,5 @@ after the account product was first deployed.
 Deploy steps: build both frontends (see above), then run the backend with
 `WEBAPP_JWT_SECRET` set. Both `dashboard/dist` and `webapp/frontend/dist` are
 read from their in-repo locations, so no copying to `/srv` is needed.
+Existing `data/webapp.db` is migrated on startup; do not recreate it from
+scratch.
