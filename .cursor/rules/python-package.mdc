@@ -1,0 +1,24 @@
+---
+description: src-layout maads package, CLI entry, imports, and Python packaging conventions
+globs: src/maads/**/*.py,pyproject.toml
+alwaysApply: false
+---
+
+# Python package (`src/maads`)
+
+- Importable code lives in `src/maads`. Tests live in `tests/` (pytest `pythonpath = ["src", "."]`).
+- CLI is `python -m maads` → `maads.__main__:main`. Console script `maads` is the same.
+- Subcommands that exist: `run`, `data download`, `flow plot`, `dashboard`, `artifacts render`, `artifacts backfill-timing`. Do not invent others.
+- Ship YAML/prompts via package data (`pyproject.toml` `[tool.setuptools.package-data]`). Load them with existing loaders (`config.py`, `importlib.resources`), not ad-hoc repo-relative paths that break when installed.
+- Optional extras: `[dev]` pytest+coverage; `[dashboard]` FastAPI+uvicorn; `[webapp]` FastAPI+uvicorn+argon2-cffi+PyJWT. `webapp/` is **not** inside the setuptools package (`where=["src"]`).
+- Pydantic v2: `model_dump_json()`, `model_validate()`. Never `.dict()` / `.json()` (v1).
+- No ruff/black/mypy in this repo. Do not add formatter config unless the user asks. Validate with pytest.
+
+```python
+# ✅ GOOD
+from maads.state import CrispDMState
+from maads.config import load_case_config
+
+# ❌ BAD — package is src/maads, not repo-root maads.py
+from maads.dashboard.api import router  # FastAPI lives here, not dashboard/api.py
+```

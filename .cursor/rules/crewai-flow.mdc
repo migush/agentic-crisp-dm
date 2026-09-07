@@ -1,0 +1,30 @@
+---
+description: CrewAI Flow graph, six agents, crews, CrispDMState, and CRISP-DM loop routing
+globs: src/maads/flow/**/*.py,src/maads/agents.py,src/maads/crew.py,src/maads/crew_base.py,src/maads/crews/**/*.py,src/maads/state.py,src/maads/deltas.py,src/maads/config.py,src/maads/config/*.yaml
+alwaysApply: false
+---
+
+# CrewAI Flow, agents, state
+
+There are **six** runtime agents (PM, Domain, Data Engineer, Data Scientist, Developer, Storyteller). `CrispDMFlow` is `Flow[CrispDMState]`. Keep the caller state via `_state` (CrewAI copies `initial_state`).
+
+## Required
+
+- Graph changes stay in `flow/crisp_dm_flow.py` using `@start` / `@listen` / `@router` / `or_` from `crewai.flow.flow`.
+- Loop caps and back-edges: read `skills/crisp-dm-loops/SKILL.md` then `phase_runner.py` + `routers.py`. Loop A = checkpoint 3.1 → `phase_1`; B = 5.1 → `phase_3`; C = 5.2 → `phase_1`. Loop D is not a hard flow edge.
+- Canonical personas: `src/maads/config/agents.yaml`. Phase crews use that path (`crews/paths.py`); per-crew `config/tasks.yaml` only.
+- Kickoff is **one agent, one task** (`crews/kickoff.py` → `run_json_task`). Do not replace the hub-and-spoke Flow with a static multi-task sequential Crew.
+- Mutate state via mutators / `StateDelta` / capability `apply_*`. Prompts: `state.view_for(agent_name)`.
+
+```python
+# ✅ GOOD — router returns a string label the @listen matches
+return "phase_1"
+
+# ❌ BAD
+if state.case_id == "titanic":
+    return "phase_3"
+# ❌ BAD — dump full state into an LLM prompt
+prompt = state.model_dump_json()
+```
+
+PM `plan()` must return `Plan(action in {"advance","loop_back","halt"})`. Tests patch `maads.crew.run_text_task` / `run_json_task`, not CrewAI internals.

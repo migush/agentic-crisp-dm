@@ -1,0 +1,22 @@
+---
+description: Pytest conventions, LLM fakes, path-coverage first, dashboard/webapp extras
+globs: tests/**/*.py,src/maads/testing/**/*.py
+alwaysApply: false
+---
+
+# Testing
+
+`tests/conftest.py` autouse-patches `maads.crew.run_text_task` → `tests/fixtures/titanic_exec.py:fake_run_text_task` and sets `MAADS_SKIP_MODEL_PROBE=1`. Most tests never call a real LLM.
+
+- Fast gate: `MAADS_TRACE=0 coverage run -m pytest tests/test_path_coverage.py -q` then `coverage report --show-missing`. Coverage source `maads`, omit `*/testing/*`.
+- Flow JSON: patch `maads.agents.run_json_task` or use `maads.testing.fake_llm.fake_llm_response` / `flow_harness.py`.
+- Dashboard API tests need `.[dashboard]`; webapp tests need `.[webapp]`. No Jest/Vitest — frontend check is `npm run build`.
+- CI (`.github/workflows/easy-deploy.yml`) deploys only; it does **not** run pytest. Do not assume GitHub CI caught a regression.
+
+```python
+# ✅ GOOD
+monkeypatch.setattr("maads.crew.run_text_task", fake_run_text_task)
+
+# ❌ BAD — live OpenAI/Ollama in unit tests
+# ❌ BAD — patch CrewAI Agent.kickoff instead of the maads.crew seam
+```

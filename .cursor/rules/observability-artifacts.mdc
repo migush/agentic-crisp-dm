@@ -1,0 +1,29 @@
+---
+description: Run artifact layout, traces, OpenTelemetry, reports, and communications privacy
+globs: src/maads/observability/**/*.py,src/maads/artifact_*.py,src/maads/reports/**/*.py,src/maads/run_status.py,src/maads/live_summary.py
+alwaysApply: false
+---
+
+# Artifacts, traces, reports
+
+Layout under `artifacts/<case_id>/`:
+
+```
+current                 # plain text run id (NOT a symlink)
+runs/<run_id>/          # status.json, final_state.json, collected/, derived/, trace/, reports/
+archive/<run_id>/
+```
+
+Helpers: `artifact_runs.prepare_run_dir`, `artifact_paths.RunPaths` / `ensure_run_layout`. Per-run `CREWAI_STORAGE_DIR` so concurrent same-case runs do not collide.
+
+- Tracing: `observability/bootstrap.py` (`auto_enable`, `begin_run`, `end_run`). `MAADS_TRACE`, `MAADS_TRACE_LLM_IO` (`full`|`preview`|`off`), `MAADS_TRACE_OTEL`.
+- Reports from `__main__._persist_run_outcome` → `reports.write_run_reports` (postmortem, case_report, execution_analysis, workbook, handoff, improvement bundle).
+- Communications markdown/JSONL contain **full prompts**. Never expose the dashboard or `trace/` on a public bind.
+
+```python
+# ✅ GOOD
+state_path.write_text(state.model_dump_json(indent=2))
+
+# ❌ BAD
+artifacts/titanic/current -> symlink to runs/<id>   # code uses a text pointer
+```

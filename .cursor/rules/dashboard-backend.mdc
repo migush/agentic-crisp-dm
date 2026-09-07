@@ -1,0 +1,24 @@
+---
+description: FastAPI trace dashboard API in src/maads/dashboard (not the Vite dashboard/ folder)
+globs: src/maads/dashboard/**/*.py,tests/dashboard/**/*.py,tests/test_dashboard_store.py
+alwaysApply: false
+---
+
+# Trace dashboard backend
+
+FastAPI lives in **`src/maads/dashboard/`** (`server.py` `create_app`, `api.py` `APIRouter(prefix="/api")`, `store.py`, `aggregators.py`, `deps.py`). Repo-root `dashboard/` is the React SPA only.
+
+- Bind default `127.0.0.1:8765`. No auth. CORS `allow_origins=["*"]`. Local use — communications include full prompts.
+- Artifacts via `CaseScope` (`deps.py`). Standalone: `write_root` = process artifact root. Hosted webapp overrides `case_scope_dep` and `launch_guard_dep`.
+- `POST /api/run` launches `python -m maads run` into `scope.write_root`. Hosted must 403 this (`launch_guard_dep`).
+- Path traversal: keep `_safe_segment` / resolve-inside-root checks on `artifacts/{path}`.
+- OpenAPI: `/api/docs`, `/api/openapi.json`. Tests: `tests/dashboard/` + `tests/test_dashboard_store.py` with `pip install -e ".[dashboard]"`.
+
+```python
+# ✅ GOOD
+from maads.dashboard.server import create_app
+from maads.dashboard.deps import CaseScope, launch_guard_dep
+
+# ❌ BAD — do not add FastAPI routes under dashboard/src
+# ❌ BAD — do not bind 0.0.0.0 or add public auth-less deploy
+```
