@@ -7,6 +7,7 @@ task creation, ownership checks, and spend reporting.
 
 from __future__ import annotations
 
+import pytest
 import webapp.backend.db as db_module
 from fastapi.testclient import TestClient
 
@@ -30,6 +31,20 @@ def test_launch_task_rejects_unknown_provider(tmp_path, monkeypatch):
     resp = client.post(
         "/api/tasks",
         json={"case_name": "titanic", "provider": "not-a-provider", "model_id": "x", "decrypted_api_key": "sk-x"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.parametrize("case_name", ["../../etc/passwd", "not_a_case", "", "titanic/../x"])
+def test_launch_task_rejects_unknown_case(tmp_path, monkeypatch, case_name):
+    # case_name reaches both a filesystem path and the `maads run --case`
+    # argument, so anything not backed by configs/<case>.yaml must be refused.
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    resp = client.post(
+        "/api/tasks",
+        json={"case_name": case_name, "provider": "openai", "model_id": "gpt-4o", "decrypted_api_key": "sk-x"},
         headers=headers,
     )
     assert resp.status_code == 400

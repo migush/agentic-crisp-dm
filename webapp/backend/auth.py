@@ -20,9 +20,24 @@ _hasher = PasswordHasher()
 # MVP: a fixed secret from the environment. Rotate by setting a new
 # WEBAPP_JWT_SECRET (invalidates all existing sessions). Must be set to a
 # real random value (e.g. `openssl rand -hex 32`) outside local dev.
-_JWT_SECRET = os.environ.get("WEBAPP_JWT_SECRET", "dev-secret-change-me-dev-secret-change-me")
+_DEV_FALLBACK_SECRET = "dev-secret-change-me-dev-secret-change-me"
+_JWT_SECRET = os.environ.get("WEBAPP_JWT_SECRET", _DEV_FALLBACK_SECRET)
 _JWT_ALGORITHM = "HS256"
 _ACCESS_TOKEN_TTL = timedelta(hours=12)
+
+
+def assert_secret_configured() -> None:
+    """Refuse to serve with the published fallback secret.
+
+    Anyone can read it from this file and forge a token for any account, so a
+    deploy that forgets WEBAPP_JWT_SECRET must fail loudly rather than come up
+    silently insecure. Tests and local dev opt in with WEBAPP_ALLOW_DEV_SECRET=1.
+    """
+    if _JWT_SECRET == _DEV_FALLBACK_SECRET and os.environ.get("WEBAPP_ALLOW_DEV_SECRET") != "1":
+        raise RuntimeError(
+            "WEBAPP_JWT_SECRET is not set. Generate one with `openssl rand -hex 32`, "
+            "or set WEBAPP_ALLOW_DEV_SECRET=1 for local development only.",
+        )
 
 
 def hash_password(password: str) -> str:

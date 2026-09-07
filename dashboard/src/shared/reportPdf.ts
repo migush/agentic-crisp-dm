@@ -1,6 +1,8 @@
 // Opens a branded, print-ready view of a run's final report in a new window
 // and triggers the browser's "Save as PDF". No external dependencies.
 
+import { BASE, authHeaders } from "./api";
+
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -24,7 +26,9 @@ function inline(s: string): string {
 export function runArtifactUrl(caseId: string, runId: string, relPath: string): string {
   const clean = normalizeArtifactPath(relPath);
   const encoded = clean.split("/").map((part) => encodeURIComponent(part)).join("/");
-  return `/api/cases/${encodeURIComponent(caseId)}/artifacts/${encoded}?run_id=${encodeURIComponent(runId)}`;
+  // Embedded as <img src> in the print window, so it can't carry an auth
+  // header — the hosted deployment authenticates these via the session cookie.
+  return `${BASE}/api/cases/${encodeURIComponent(caseId)}/artifacts/${encoded}?run_id=${encodeURIComponent(runId)}`;
 }
 
 function isExternalOrEmbedded(src: string): boolean {
@@ -264,7 +268,8 @@ export async function openStyledReport(
   );
   try {
     const res = await fetch(
-      `/api/cases/${encodeURIComponent(caseId)}/final_report.md?run_id=${encodeURIComponent(runId)}`,
+      `${BASE}/api/cases/${encodeURIComponent(caseId)}/final_report.md?run_id=${encodeURIComponent(runId)}`,
+      { headers: authHeaders() },
     );
     if (!res.ok) throw new Error(String(res.status));
     const md = await embedReportImages(await res.text(), caseId, runId);

@@ -15,8 +15,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from maads.artifact_runs import resolve_active_run_dir
 from maads.pricing import estimate_cost_usd
 
+from . import paths
 from .db import get_conn
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -28,9 +30,15 @@ PROVIDER_ENV_VAR = {
 }
 
 
-def _state_path_for_case(case_name: str) -> Path:
-    # artifacts/<case>/current is a symlink to the latest run dir (see CLAUDE.md).
-    return REPO_ROOT / "artifacts" / case_name / "current" / "state.json"
+def _run_dir_for_case(artifact_root: Path, case_name: str) -> Path | None:
+    """The run directory the just-finished subprocess wrote.
+
+    ``<case>/current`` is a plain text file holding the run id, not a symlink to
+    a directory — treating it as one (the previous behaviour) yielded a path
+    that never exists, so no spend was ever recorded. resolve_active_run_dir
+    reads it correctly and falls back to the newest run dir.
+    """
+    return resolve_active_run_dir(artifact_root / case_name)
 
 
 def create_task(user_id: int, case_name: str, provider: str, model_id: str) -> int:
@@ -42,20 +50,34 @@ def create_task(user_id: int, case_name: str, provider: str, model_id: str) -> i
         return cur.lastrowid
 
 
-def run_task(task_id: int, *, case_name: str, provider: str, model_id: str, decrypted_api_key: str) -> None:
+def run_task(
+    task_id: int,
+    *,
+    user_id: int,
+    case_name: str,
+    provider: str,
+    model_id: str,
+    decrypted_api_key: str,
+) -> None:
     """Run synchronously (call from a FastAPI BackgroundTask). Never raises past logging."""
     env_var = PROVIDER_ENV_VAR.get(provider)
     if env_var is None:
         _mark_failed(task_id, f"Unknown provider: {provider}")
         return
 
+    artifact_root = paths.user_artifact_root(user_id)
     started_at = datetime.now(timezone.utc).isoformat()
     _update_status(task_id, "running", started_at=started_at)
 
     child_env = {**_subprocess_base_env(), env_var: decrypted_api_key, "MODEL": model_id}
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "maads", "run", "--case", case_name, "--model", model_id],
+            [
+                sys.executable, "-m", "maads", "run",
+                "--case", case_name,
+                "--model", model_id,
+                "--artifact-dir", str(artifact_root),
+            ],
             cwd=REPO_ROOT,
             env=child_env,
             capture_output=True,
@@ -75,7 +97,14 @@ def run_task(task_id: int, *, case_name: str, provider: str, model_id: str, decr
         _mark_failed(task_id, f"maads run exited {result.returncode}")
         return
 
-    _record_completion(task_id, case_name=case_name, provider=provider, model_id=model_id, finished_at=finished_at)
+    _record_completion(
+        task_id,
+        artifact_root=artifact_root,
+        case_name=case_name,
+        provider=provider,
+        model_id=model_id,
+        finished_at=finished_at,
+    )
 
 
 def _subprocess_base_env() -> dict[str, str]:
@@ -107,20 +136,30 @@ def _mark_failed(task_id: int, reason: str) -> None:
     print(f"[run_launcher] task {task_id} failed: {reason}", file=sys.stderr)
 
 
-def _record_completion(task_id: int, *, case_name: str, provider: str, model_id: str, finished_at: str) -> None:
-    state_path = _state_path_for_case(case_name)
+def _record_completion(
+    task_id: int,
+    *,
+    artifact_root: Path,
+    case_name: str,
+    provider: str,
+    model_id: str,
+    finished_at: str,
+) -> None:
+    run_dir = _run_dir_for_case(artifact_root, case_name)
     token_spend: dict[str, int] = {}
     total_input = total_output = 0
-    if state_path.exists():
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+    if run_dir is not None and (run_dir / "state.json").is_file():
+        state = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
         token_spend = state.get("token_spend", {})
         total_input = state.get("total_input_tokens", 0)
         total_output = state.get("total_output_tokens", 0)
 
     with get_conn() as conn:
         conn.execute(
+            # Store the concrete run dir, not the `current` pointer, which the
+            # user's next run of the same case would move out from under it.
             "UPDATE tasks SET status = 'completed', finished_at = ?, run_artifact_path = ? WHERE id = ?",
-            (finished_at, str(state_path.parent), task_id),
+            (finished_at, str(run_dir) if run_dir else None, task_id),
         )
         for agent, agent_total in token_spend.items():
             # Per-agent input/output split isn't tracked yet (see state.py's

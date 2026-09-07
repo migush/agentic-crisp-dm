@@ -1,6 +1,6 @@
 # Experience — house_prices
 
-- Loops fired: none
+- Loops fired: ['A']
 - Degraded steps: none
-- Chosen model: gradient_boosting
-- CV: 0.13157607806283528
+- Chosen model: ridge_log_linear_regression_pipeline
+- CV: 0.14027043298264727

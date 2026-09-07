@@ -16,10 +16,43 @@ import type {
   TraceSummary,
 } from "./types";
 
-const API = "/api";
+/**
+ * Path prefix this dashboard is served under.
+ *
+ * Two deployments share one build: `python -m maads dashboard` serves it from
+ * `/`, and the hosted account app mounts it at `/dashboard/` (DASHBOARD_MOUNT
+ * in webapp/backend/app.py). Resolved at runtime rather than baked in at build
+ * time so `npm run build` doesn't have to be told which one it's for.
+ */
+export const MOUNT_PREFIX = "/dashboard";
+
+export const BASE = window.location.pathname.startsWith(MOUNT_PREFIX) ? MOUNT_PREFIX : "";
+
+/** True when running inside the hosted account app (per-user, authenticated). */
+export const isHosted = BASE !== "";
+
+const API = `${BASE}/api`;
+
+/** Session token shared with the account app (same origin, same localStorage). */
+const TOKEN_STORAGE_KEY = "maads_access_token";
+
+export function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** A 401 only happens in the hosted deployment; locally there is no auth. */
+function redirectToLogin(): void {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  window.location.href = "/login";
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: authHeaders() });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("Not authenticated");
+  }
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}`);
   }
@@ -124,7 +157,7 @@ export async function postStartRun(
 ): Promise<{ status: string; case_id: string; model: string | null; pid: number }> {
   const res = await fetch(`${API}/run`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ case_id: caseId, model: model ?? null }),
   });
   if (!res.ok) {

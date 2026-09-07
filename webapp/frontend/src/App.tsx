@@ -3,7 +3,7 @@ import { LoginPage } from "./pages/Login";
 import { RegisterPage } from "./pages/Register";
 import { ProfilePage } from "./pages/Profile";
 import { TasksPage } from "./pages/Tasks";
-import { clearToken, getToken } from "./lib/api";
+import { getToken, logout } from "./lib/api";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   return getToken() ? children : <Navigate to="/login" replace />;
@@ -19,10 +19,13 @@ function NavBar() {
         <>
           <Link to="/profile">Profile</Link>
           <Link to="/tasks">Tasks</Link>
+          {/* Plain <a>, not <Link>: the trace dashboard is a separate SPA
+              served by the backend at /dashboard, not a route in this one. */}
+          <a href="/dashboard/">Dashboard</a>
           <button
             className="ml-auto text-slate-400"
             onClick={() => {
-              clearToken();
+              void logout();
               navigate("/login");
             }}
           >

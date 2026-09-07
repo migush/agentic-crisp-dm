@@ -14,6 +14,8 @@ import { Prompts } from "./pages/Prompts";
 import { StateShape } from "./pages/StateShape";
 import { FailureModes } from "./pages/FailureModes";
 import { Launch } from "./pages/Launch";
+import { LaunchUnavailable } from "./pages/LaunchUnavailable";
+import { isHosted } from "./shared/api";
 import { Home } from "./pages/Home";
 import { Results } from "./pages/Results";
 import { MaadsLogo } from "./components/MaadsLogo";
@@ -228,7 +230,13 @@ export default function App() {
             )}
           />
         ) : tab === "launch" ? (
-          <Launch onLaunched={(id) => setCaseId(id)} />
+          // Hosted runs need the user's provider key, which only exists
+          // decrypted in the browser on the account app's Tasks page.
+          isHosted ? (
+            <LaunchUnavailable />
+          ) : (
+            <Launch onLaunched={(id) => setCaseId(id)} />
+          )
         ) : tab === "results" ? (
           <Results />
         ) : tab === "framework" ? (
