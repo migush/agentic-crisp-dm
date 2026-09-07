@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from .ollama_models import list_ollama_cloud_chat_models
+from .ollama_models import list_ollama_cloud_chat_models, ollama_cloud_model_available
 from .openai_models import list_openai_chat_models
 
 HOSTED_PROVIDERS = frozenset({"openai", "ollama_cloud"})
@@ -34,3 +34,11 @@ def list_live_chat_models(provider: str, api_key: str) -> list[dict[str, str]]:
     if provider == "openai":
         return list_openai_chat_models(api_key)
     return list_ollama_cloud_chat_models(api_key)
+
+
+def model_available_for_key(provider: str, api_key: str, model_id: str) -> bool:
+    require_hosted_provider(provider, kind="tasks")
+    if provider == "openai":
+        live_ids = {entry["id"] for entry in list_openai_chat_models(api_key)}
+        return model_id in live_ids
+    return ollama_cloud_model_available(api_key, model_id)

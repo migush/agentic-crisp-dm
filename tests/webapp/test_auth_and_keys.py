@@ -180,6 +180,8 @@ def test_models_returns_filtered_ollama_cloud_list(tmp_path, monkeypatch):
     assert ids == ["ollama/gpt-oss:120b", "ollama/gpt-oss:20b"]
     assert FakeOllamaTags.last_authorization == "Bearer ollama-live"
     assert "nomic-embed-text" not in ids
+    assert "ollama/glm-5.2" not in ids
+    assert "ollama/kimi-k3" not in ids
     assert all(entry["id"].startswith("ollama/") for entry in body)
 
 

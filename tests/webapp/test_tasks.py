@@ -74,6 +74,23 @@ def test_launch_task_rejects_ollama_model_not_in_live_list(tmp_path, monkeypatch
     assert resp.status_code == 400
 
 
+def test_launch_task_rejects_ollama_subscription_gated_model(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    resp = client.post(
+        "/api/tasks",
+        json={
+            "case_name": "titanic",
+            "provider": "ollama_cloud",
+            "model_id": "ollama/glm-5.2",
+            "decrypted_api_key": "ollama-secret",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "model_id is not available for this API key."
+
+
 def test_launch_task_rejects_unknown_provider(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
     headers = register(client)

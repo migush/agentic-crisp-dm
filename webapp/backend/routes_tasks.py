@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from . import run_launcher
 from .db import get_conn
-from .hosted import list_live_chat_models, require_hosted_provider
+from .hosted import model_available_for_key, require_hosted_provider
 from .paths import known_case_ids
 from .routes_auth import require_user
 
@@ -61,8 +61,7 @@ def launch_task(
     if body.case_name not in known_case_ids():
         raise HTTPException(status_code=400, detail=f"Unknown case: {body.case_name}")
 
-    live_ids = {entry["id"] for entry in list_live_chat_models(provider, body.decrypted_api_key)}
-    if model_id not in live_ids:
+    if not model_available_for_key(provider, body.decrypted_api_key, model_id):
         raise HTTPException(status_code=400, detail="model_id is not available for this API key.")
 
     task_id = run_launcher.create_task(user_id, body.case_name, provider, model_id)

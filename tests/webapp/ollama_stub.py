@@ -11,10 +11,11 @@ DEFAULT_OLLAMA_CLOUD_NAMES = ("gpt-oss:120b", "gpt-oss:20b")
 
 
 class FakeOllamaTags:
-    """Stand-in for urllib.request.urlopen against ollama.com/api/tags."""
+    """Stand-in for urllib.request.urlopen against ollama.com."""
 
     models: list[dict[str, str]] = [{"name": name} for name in DEFAULT_OLLAMA_CLOUD_NAMES]
     extra_models: list[dict[str, str]] = []
+    gated_names: set[str] = set()
     error: BaseException | None = None
     status_code: int | None = None
     last_authorization: str | None = None
@@ -23,7 +24,12 @@ class FakeOllamaTags:
     @classmethod
     def reset(cls) -> None:
         cls.models = [{"name": name} for name in DEFAULT_OLLAMA_CLOUD_NAMES]
-        cls.extra_models = [{"name": "nomic-embed-text"}]
+        cls.extra_models = [
+            {"name": "nomic-embed-text"},
+            {"name": "glm-5.2"},
+            {"name": "kimi-k3"},
+        ]
+        cls.gated_names = {"glm-5.2", "kimi-k3"}
         cls.error = None
         cls.status_code = None
         cls.last_authorization = None
@@ -47,5 +53,20 @@ class FakeOllamaTags:
                 EmailMessage(),
                 io.BytesIO(b""),
             )
+        url = cls.last_url or ""
+        if "/api/chat" in url:
+            payload = json.loads(req.data or b"{}")
+            model = payload.get("model")
+            if model in cls.gated_names:
+                raise urllib.error.HTTPError(
+                    url,
+                    402,
+                    "Payment Required",
+                    EmailMessage(),
+                    io.BytesIO(
+                        b'{"error":{"message":"this model requires a subscription or extra usage"}}'
+                    ),
+                )
+            return io.BytesIO(b'{"message":{"role":"assistant","content":"ok"}}')
         payload = json.dumps({"models": list(cls.models) + list(cls.extra_models)}).encode("utf-8")
         return io.BytesIO(payload)
