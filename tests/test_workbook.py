@@ -216,6 +216,32 @@ def test_api_serves_case_workbook(tmp_path: Path):
     assert "nbformat" in resp.text
 
 
+def test_api_generates_case_workbook_from_final_state(tmp_path: Path):
+    from fastapi.testclient import TestClient
+    from maads.dashboard.server import create_app
+
+    case = tmp_path / "house_prices"
+    run_dir = case / "runs" / "wb-lazy"
+    ensure_run_layout(run_dir, run_id="wb-lazy", case_id="house_prices")
+    (run_dir / "status.json").write_text(
+        json.dumps({"case_id": "house_prices", "phase": 6, "halted": True}),
+        encoding="utf-8",
+    )
+    (case / "current").write_text("wb-lazy", encoding="utf-8")
+    state = _minimal_state("configs/house_prices.yaml", run_dir)
+    (run_dir / "final_state.json").write_text(state.model_dump_json(indent=2), encoding="utf-8")
+    assert not (run_dir / "reports" / "case_workbook.ipynb").is_file()
+
+    import maads.dashboard.server as server_mod
+
+    server_mod._artifact_root = tmp_path
+    client = TestClient(create_app())
+    resp = client.get("/api/cases/house_prices/reports/case_workbook.ipynb")
+    assert resp.status_code == 200
+    assert "nbformat" in resp.text
+    assert (run_dir / "reports" / "case_workbook.ipynb").is_file()
+
+
 def test_path_rewrite_uses_run_dir(tmp_path: Path):
     run_dir = tmp_path / "runs" / "path-test"
     repo = repo_root()

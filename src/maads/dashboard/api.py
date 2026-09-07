@@ -401,12 +401,23 @@ def get_improvement_bundle(case_id: str, scope: Scope, run_id: str | None = Quer
 @router.get("/cases/{case_id}/reports/case_workbook.ipynb")
 def get_case_workbook(case_id: str, scope: Scope, run_id: str | None = Query(None)) -> FileResponse:
     from maads.artifact_paths import RunPaths
+    from maads.reports.workbook import write_case_workbook
+    from maads.state import CrispDMState
 
     try:
         artifact_dir = scope.case_dir(case_id, run_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    path = RunPaths(artifact_dir).reports / "case_workbook.ipynb"
+    paths = RunPaths(artifact_dir)
+    path = paths.reports / "case_workbook.ipynb"
+    if not path.is_file():
+        if scope.is_read_only(case_id):
+            raise HTTPException(status_code=404, detail="case_workbook.ipynb not found")
+        state_path = artifact_dir / "final_state.json"
+        if not state_path.is_file():
+            raise HTTPException(status_code=404, detail="case_workbook.ipynb not found")
+        state = CrispDMState.model_validate_json(state_path.read_text(encoding="utf-8"))
+        write_case_workbook(state, paths)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="case_workbook.ipynb not found")
     return FileResponse(
