@@ -16,7 +16,7 @@ WEBAPP_ALLOW_DEV_SECRET=1 WEBAPP_INSECURE_COOKIES=1 \
 
 `WEBAPP_JWT_SECRET` is required in production. The published fallback is blocked unless `WEBAPP_ALLOW_DEV_SECRET=1`.
 
-SQLite file: `data/webapp.db` (gitignored via `data/`).
+SQLite file: `data/webapp.db` (gitignored via `data/`). On startup `init_db` migrates a live `users` table in place (`email` → `username`, keep `id`); do not delete the file.
 
 ## Frontend
 
@@ -44,6 +44,8 @@ pytest tests/webapp/ -q
 
 ## Invariants
 
+- Auth is username-only (no login password). `/register` and `/login` take `{ username }`.
 - Launch runs via `POST /api/tasks`, not dashboard `POST /api/run` (403 + `LaunchUnavailable`)
+- Hosted keys and launches are OpenAI-only. Tasks model dropdown comes from `POST /api/models` (live OpenAI list after passphrase unlock), not the static catalog.
 - User artifacts: `data/users/<id>/artifacts/`; demo reads repo `artifacts/`
-- Store keys as ciphertext only; plaintext key only in launcher child env
+- Store keys as ciphertext only; plaintext key only in launcher child env (`OPENAI_API_KEY` + `MODEL`)

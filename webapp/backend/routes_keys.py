@@ -1,9 +1,9 @@
 """Stores and returns encrypted-API-key blobs. Never decrypts anything.
 
 The browser derives an encryption key from the user's passphrase (Web Crypto
-API, PBKDF2/Argon2id + AES-GCM — see webapp/frontend/src/lib/crypto.ts) and
-sends only ciphertext + IV + KDF params here. This backend has no way to read
-the plaintext key; decryption only happens client-side, or transiently in the
+API, PBKDF2 + AES-GCM — see webapp/frontend/src/lib/crypto.ts) and sends only
+ciphertext + IV + KDF params here. This backend has no way to read the
+plaintext key; decryption only happens client-side, or transiently in the
 run-launcher's memory at the moment a task actually calls the provider.
 """
 
@@ -19,6 +19,8 @@ from .routes_auth import require_user
 
 router = APIRouter(prefix="/api/keys", tags=["keys"])
 
+_HOSTED_PROVIDER = "openai"
+
 
 class StoredKey(BaseModel):
     provider: str
@@ -32,7 +34,7 @@ class StoredKey(BaseModel):
 
 class StoreKeyRequest(BaseModel):
     provider: str
-    selected_model: str
+    selected_model: str = ""
     ciphertext_b64: str
     iv_b64: str
     kdf_salt_b64: str
@@ -52,6 +54,8 @@ def list_keys(user_id: int = Depends(require_user)) -> list[StoredKey]:
 
 @router.put("", response_model=StoredKey)
 def upsert_key(body: StoreKeyRequest, user_id: int = Depends(require_user)) -> StoredKey:
+    if body.provider != _HOSTED_PROVIDER:
+        raise HTTPException(status_code=400, detail="Hosted keys must use provider=openai.")
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         conn.execute(

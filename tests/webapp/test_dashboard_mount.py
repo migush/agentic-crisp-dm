@@ -18,14 +18,20 @@ import webapp.backend.paths as paths_module
 
 @pytest.fixture
 def client(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("WEBAPP_ALLOW_DEV_SECRET", "1")
+    monkeypatch.setenv("WEBAPP_INSECURE_COOKIES", "1")
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "webapp.db")
+    monkeypatch.setattr(
+        paths_module, "user_artifact_root", lambda uid: tmp_path / "users" / str(uid) / "artifacts"
+    )
+    monkeypatch.setattr(paths_module, "demo_artifact_root", lambda: tmp_path / "demo")
     from webapp.backend.app import create_app
 
     return TestClient(create_app())
 
 
-def register(client: TestClient, email: str) -> dict[str, str]:
-    resp = client.post("/api/auth/register", json={"email": email, "password": "correct horse battery"})
+def register(client: TestClient, username: str) -> dict[str, str]:
+    resp = client.post("/api/auth/register", json={"username": username})
     assert resp.status_code == 201
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -55,7 +61,8 @@ def test_dashboard_api_requires_authentication(client: TestClient) -> None:
 
 def test_session_cookie_authenticates_downloads(client: TestClient) -> None:
     # Set by /login and /register; the only way <a download> links can authenticate.
-    client.post("/api/auth/register", json={"email": "c@example.com", "password": "correct horse battery"})
+    resp = client.post("/api/auth/register", json={"username": "carol"})
+    assert resp.status_code == 201
     assert client.get("/dashboard/api/cases").status_code == 200
 
     assert client.post("/api/auth/logout").status_code == 204
@@ -63,8 +70,8 @@ def test_session_cookie_authenticates_downloads(client: TestClient) -> None:
 
 
 def test_each_account_sees_only_its_own_runs(client: TestClient, tmp_path) -> None:
-    alice = register(client, "alice@example.com")
-    bob = register(client, "bob@example.com")
+    alice = register(client, "alice")
+    bob = register(client, "bob")
 
     make_run(paths_module.user_artifact_root(1), "titanic", marker="alice")
     make_run(paths_module.user_artifact_root(2), "house_prices", marker="bob")
@@ -85,7 +92,7 @@ def test_each_account_sees_only_its_own_runs(client: TestClient, tmp_path) -> No
 
 
 def test_demo_cases_are_shared_and_flagged_read_only(client: TestClient) -> None:
-    headers = register(client, "d@example.com")
+    headers = register(client, "dana")
     make_run(paths_module.demo_artifact_root(), "titanic", marker="demo")
     make_run(paths_module.user_artifact_root(1), "house_prices", marker="mine")
 
@@ -94,7 +101,7 @@ def test_demo_cases_are_shared_and_flagged_read_only(client: TestClient) -> None
 
 
 def test_own_case_shadows_a_demo_of_the_same_name(client: TestClient) -> None:
-    headers = register(client, "e@example.com")
+    headers = register(client, "erin")
     make_run(paths_module.demo_artifact_root(), "titanic", marker="demo")
     make_run(paths_module.user_artifact_root(1), "titanic", marker="mine")
 
@@ -107,7 +114,7 @@ def test_own_case_shadows_a_demo_of_the_same_name(client: TestClient) -> None:
 # sent — an attacker's client wouldn't normalise it either.
 @pytest.mark.parametrize("case_id", ["..%2F..%2Fetc", "%2E%2E", "a%2Fb"])
 def test_case_id_cannot_escape_the_account_root(client: TestClient, case_id: str) -> None:
-    headers = register(client, "f@example.com")
+    headers = register(client, "frank")
     resp = client.get(f"/dashboard/api/cases/{case_id}/state", headers=headers)
     assert resp.status_code == 404
 
@@ -125,7 +132,7 @@ def test_case_scope_rejects_traversal_ids() -> None:
 
 
 def test_dashboard_launch_is_refused_when_hosted(client: TestClient) -> None:
-    headers = register(client, "g@example.com")
+    headers = register(client, "gina")
     resp = client.post("/dashboard/api/run", json={"case_id": "titanic"}, headers=headers)
     # A hosted run needs the caller's provider key, which only exists decrypted
     # in their browser — launches go through POST /api/tasks instead.

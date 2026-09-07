@@ -1,9 +1,8 @@
-"""Password hashing and JWT session tokens for the account product.
+"""JWT session tokens for the account product.
 
-Both pieces are free/OSS with no external service: argon2-cffi for password
-hashing, PyJWT for short-lived bearer tokens. This module only ever handles
-the user's *login* password — the LLM provider API key is a separate secret,
-encrypted client-side, and never passes through here (see routes_keys.py).
+Username-only accounts: anyone who knows a username can open that session.
+The LLM provider API key is a separate secret, encrypted client-side, and
+never passes through here (see routes_keys.py).
 """
 
 from __future__ import annotations
@@ -12,10 +11,6 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
-
-_hasher = PasswordHasher()
 
 # MVP: a fixed secret from the environment. Rotate by setting a new
 # WEBAPP_JWT_SECRET (invalidates all existing sessions). Must be set to a
@@ -38,17 +33,6 @@ def assert_secret_configured() -> None:
             "WEBAPP_JWT_SECRET is not set. Generate one with `openssl rand -hex 32`, "
             "or set WEBAPP_ALLOW_DEV_SECRET=1 for local development only.",
         )
-
-
-def hash_password(password: str) -> str:
-    return _hasher.hash(password)
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    try:
-        return _hasher.verify(password_hash, password)
-    except VerifyMismatchError:
-        return False
 
 
 def issue_access_token(user_id: int) -> str:

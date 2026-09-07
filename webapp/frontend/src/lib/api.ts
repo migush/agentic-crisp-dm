@@ -1,6 +1,6 @@
 const TOKEN_STORAGE_KEY = "maads.accessToken";
 
-export type ModelCatalog = Record<string, Array<{ id: string; label: string }>>;
+export type LiveModel = { id: string; label: string };
 
 export type StoredKey = {
   provider: string;
@@ -85,17 +85,17 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function register(email: string, password: string): Promise<TokenResponse> {
+export function register(username: string): Promise<TokenResponse> {
   return apiFetch<TokenResponse>("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username }),
   });
 }
 
-export function login(email: string, password: string): Promise<TokenResponse> {
+export function login(username: string): Promise<TokenResponse> {
   return apiFetch<TokenResponse>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username }),
   });
 }
 
@@ -108,8 +108,11 @@ export async function logout(): Promise<void> {
   }
 }
 
-export function fetchModelCatalog(): Promise<ModelCatalog> {
-  return apiFetch<ModelCatalog>("/api/models");
+export function fetchLiveModels(decryptedApiKey: string): Promise<LiveModel[]> {
+  return apiFetch<LiveModel[]>("/api/models", {
+    method: "POST",
+    body: JSON.stringify({ decrypted_api_key: decryptedApiKey }),
+  });
 }
 
 export function listStoredKeys(): Promise<StoredKey[]> {

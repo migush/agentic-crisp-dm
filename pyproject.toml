@@ -36,7 +36,6 @@ dashboard = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
 webapp = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "argon2-cffi>=23.1",
     "PyJWT>=2.8",
 ]
 

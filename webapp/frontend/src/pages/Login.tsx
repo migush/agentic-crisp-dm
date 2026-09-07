@@ -3,8 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { listStoredKeys, login, setToken } from "../lib/api";
 
 export function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -12,7 +11,7 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
     try {
-      const { access_token } = await login(email, password);
+      const { access_token } = await login(username);
       setToken(access_token);
       // Users with a provider key already set up land on their task
       // dashboard; first-timers go set one up in Profile first.
@@ -29,18 +28,13 @@ export function LoginPage() {
       <form onSubmit={onSubmit} className="space-y-3">
         <input
           className="w-full rounded border border-slate-700 bg-slate-900 p-2"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border border-slate-700 bg-slate-900 p-2"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          type="text"
+          autoComplete="username"
+          placeholder="Username"
+          minLength={3}
+          maxLength={254}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           required
         />
         {error && <p className="text-sm text-red-400">{error}</p>}

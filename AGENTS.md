@@ -16,7 +16,7 @@ Older docs (`CLAUDE.md`, README) still say “five agents”. Treat that as stal
 | `skills/` | **MAADS runtime** agent skills (loops, JSON contract). Not Cursor skills. |
 | `src/maads/dashboard/` | FastAPI trace API (`create_app`, bind `127.0.0.1:8765`) |
 | `dashboard/` | Vite + React 18 trace UI (tab state, **no react-router**) |
-| `webapp/` | Hosted account product (`:8766`, SQLite, argon2 + JWT); mounts dashboard at `/dashboard` |
+| `webapp/` | Hosted account product (`:8766`, SQLite, username JWT); mounts dashboard at `/dashboard` |
 | `artifacts/<case>/runs/<run_id>/` | Per-run outputs; `current` is a **text file** naming the run id (not a symlink) |
 
 Graphify hubs: `CrispDMState`, `RunPaths`, `TraceRun`, `load_case_config`, `StateDelta`, `PythonExec`, `CrispDMFlow`.
@@ -28,7 +28,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"          # pytest, coverage
 # extras as needed:
 pip install -e ".[dashboard]"    # FastAPI + uvicorn
-pip install -e ".[webapp]"       # FastAPI + uvicorn + argon2-cffi + PyJWT
+pip install -e ".[webapp]"       # FastAPI + uvicorn + PyJWT
 cp .env.example .env             # MODEL and/or OPENAI_API_KEY
 ```
 
