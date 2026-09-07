@@ -60,7 +60,7 @@ export function App() {
             </RequireAuth>
           }
         />
-        <Route path="*" element={<Navigate to={getToken() ? "/profile" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={getToken() ? "/tasks" : "/login"} replace />} />
       </Routes>
     </div>
   );

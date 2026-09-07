@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { encryptApiKey } from "../lib/crypto";
 import { fetchModelCatalog, listStoredKeys, ModelCatalog, StoredKey, upsertStoredKey } from "../lib/api";
 import { HelpStepper, OPENAI_KEY_HELP, PASSPHRASE_HELP } from "../components/HelpStepper";
@@ -11,6 +12,7 @@ export function ProfilePage() {
   const [apiKey, setApiKey] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchModelCatalog().then((c) => {
@@ -33,7 +35,8 @@ export function ProfilePage() {
       setStoredKeys((prev) => [...prev.filter((k) => k.provider !== provider), saved]);
       setApiKey("");
       setPassphrase("");
-      setStatus(`Saved ${provider} key for ${modelId}.`);
+      setStatus(`Saved ${provider} key for ${modelId}. Taking you to your tasks…`);
+      setTimeout(() => navigate("/tasks"), 800);
     } catch (err) {
       setStatus(`Error: ${(err as Error).message}`);
     }
