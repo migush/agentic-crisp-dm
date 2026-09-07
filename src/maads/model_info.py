@@ -116,15 +116,17 @@ def _caps_dict(caps: ModelJsonCapabilities) -> dict[str, Any]:
 
 
 def _fetch_ollama_info(model: str) -> dict[str, Any]:
+    from maads.ollama_runtime import ollama_base_url, ollama_client_kwargs
+
     model_name = model.removeprefix("ollama/")
-    host = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+    host = ollama_base_url()
     details: dict[str, Any] = {"host": host, "model_name": model_name}
     provider_raw: dict[str, Any] = {}
 
     try:
         import ollama
 
-        client = ollama.Client(host=host)
+        client = ollama.Client(**ollama_client_kwargs())
         show = client.show(model_name)
         show_dict = show.model_dump() if hasattr(show, "model_dump") else dict(show)
         provider_raw["show"] = _trim_ollama_show(show_dict)

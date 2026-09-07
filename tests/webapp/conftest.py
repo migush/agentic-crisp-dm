@@ -6,6 +6,7 @@ import os
 
 import pytest
 
+from tests.webapp.ollama_stub import FakeOllamaTags
 from tests.webapp.openai_stub import DEFAULT_LIVE_MODEL_IDS, FakeOpenAI
 
 # Must be set before webapp.backend.app is imported (create_app asserts this).
@@ -29,3 +30,10 @@ def stub_openai_models(monkeypatch):
     FakeOpenAI.last_api_key = None
     monkeypatch.setattr("webapp.backend.openai_models.OpenAI", FakeOpenAI)
     return FakeOpenAI
+
+
+@pytest.fixture(autouse=True)
+def stub_ollama_tags(monkeypatch):
+    FakeOllamaTags.reset()
+    monkeypatch.setattr("webapp.backend.ollama_models.urllib.request.urlopen", FakeOllamaTags.urlopen)
+    return FakeOllamaTags

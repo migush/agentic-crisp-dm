@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from maads.model_catalog import model_catalog
 from openai import AuthenticationError
 
+from tests.webapp.ollama_stub import FakeOllamaTags
 from tests.webapp.openai_stub import FakeOpenAI
 
 
@@ -81,7 +82,7 @@ def test_store_and_list_key_only_ever_holds_ciphertext(tmp_path, monkeypatch):
     assert "api_key" not in stored and "plaintext" not in stored
 
 
-def test_store_key_rejects_non_openai_provider(tmp_path, monkeypatch):
+def test_store_key_accepts_ollama_cloud_provider(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
     token = client.post("/api/auth/register", json={"username": "erin"}).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -89,7 +90,27 @@ def test_store_key_rejects_non_openai_provider(tmp_path, monkeypatch):
         "/api/keys",
         json={
             "provider": "ollama_cloud",
-            "selected_model": "ollama/gpt-oss:20b-cloud",
+            "selected_model": "ollama/gpt-oss:120b",
+            "ciphertext_b64": "c2VjcmV0LWNpcGhlcnRleHQ=",
+            "iv_b64": "aXY=",
+            "kdf_salt_b64": "c2FsdA==",
+            "kdf_params_json": '{"iterations": 210000}',
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["provider"] == "ollama_cloud"
+
+
+def test_store_key_rejects_unknown_provider(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    token = client.post("/api/auth/register", json={"username": "erin2"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.put(
+        "/api/keys",
+        json={
+            "provider": "anthropic",
+            "selected_model": "claude-3",
             "ciphertext_b64": "c2VjcmV0LWNpcGhlcnRleHQ=",
             "iv_b64": "aXY=",
             "kdf_salt_b64": "c2FsdA==",
@@ -102,7 +123,7 @@ def test_store_key_rejects_non_openai_provider(tmp_path, monkeypatch):
 
 def test_models_requires_auth(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
-    resp = client.post("/api/models", json={"decrypted_api_key": "sk-x"})
+    resp = client.post("/api/models", json={"provider": "openai", "decrypted_api_key": "sk-x"})
     assert resp.status_code == 401
 
 
@@ -111,7 +132,9 @@ def test_models_returns_filtered_live_list_not_catalog(tmp_path, monkeypatch):
     token = client.post("/api/auth/register", json={"username": "frank"}).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    resp = client.post("/api/models", json={"decrypted_api_key": "sk-live"}, headers=headers)
+    resp = client.post(
+        "/api/models", json={"provider": "openai", "decrypted_api_key": "sk-live"}, headers=headers
+    )
     assert resp.status_code == 200
     body = resp.json()
     ids = [entry["id"] for entry in body]
@@ -136,9 +159,55 @@ def test_models_invalid_openai_key_returns_400(tmp_path, monkeypatch):
     token = client.post("/api/auth/register", json={"username": "gina"}).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    resp = client.post("/api/models", json={"decrypted_api_key": "sk-bad"}, headers=headers)
+    resp = client.post("/api/models", json={"provider": "openai", "decrypted_api_key": "sk-bad"}, headers=headers)
     assert resp.status_code == 400
     assert resp.json()["detail"] == "invalid API key"
+
+
+def test_models_returns_filtered_ollama_cloud_list(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    token = client.post("/api/auth/register", json={"username": "ollama-user"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/api/models",
+        json={"provider": "ollama_cloud", "decrypted_api_key": "ollama-live"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    ids = [entry["id"] for entry in body]
+    assert ids == ["ollama/gpt-oss:120b", "ollama/gpt-oss:20b"]
+    assert FakeOllamaTags.last_authorization == "Bearer ollama-live"
+    assert "nomic-embed-text" not in ids
+    assert all(entry["id"].startswith("ollama/") for entry in body)
+
+
+def test_models_invalid_ollama_key_returns_400(tmp_path, monkeypatch):
+    FakeOllamaTags.status_code = 401
+    client = make_client(tmp_path, monkeypatch)
+    token = client.post("/api/auth/register", json={"username": "ollama-bad"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/api/models",
+        json={"provider": "ollama_cloud", "decrypted_api_key": "bad-key"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "invalid API key"
+
+
+def test_models_rejects_unknown_provider(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    token = client.post("/api/auth/register", json={"username": "prov"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.post(
+        "/api/models",
+        json={"provider": "anthropic", "decrypted_api_key": "sk-x"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
 
 
 def _seed_legacy_db(db_path):

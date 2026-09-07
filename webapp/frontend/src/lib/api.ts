@@ -108,10 +108,10 @@ export async function logout(): Promise<void> {
   }
 }
 
-export function fetchLiveModels(decryptedApiKey: string): Promise<LiveModel[]> {
+export function fetchLiveModels(provider: string, decryptedApiKey: string): Promise<LiveModel[]> {
   return apiFetch<LiveModel[]>("/api/models", {
     method: "POST",
-    body: JSON.stringify({ decrypted_api_key: decryptedApiKey }),
+    body: JSON.stringify({ provider, decrypted_api_key: decryptedApiKey }),
   });
 }
 

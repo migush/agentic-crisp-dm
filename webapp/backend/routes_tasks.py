@@ -12,13 +12,11 @@ from pydantic import BaseModel
 
 from . import run_launcher
 from .db import get_conn
-from .openai_models import list_openai_chat_models
+from .hosted import list_live_chat_models, require_hosted_provider
 from .paths import known_case_ids
 from .routes_auth import require_user
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
-
-_HOSTED_PROVIDER = "openai"
 
 
 class LaunchTaskRequest(BaseModel):
@@ -53,8 +51,7 @@ def launch_task(
     background_tasks: BackgroundTasks,
     user_id: int = Depends(require_user),
 ) -> TaskSummary:
-    if body.provider != _HOSTED_PROVIDER:
-        raise HTTPException(status_code=400, detail="Hosted tasks require provider=openai.")
+    provider = require_hosted_provider(body.provider, kind="tasks")
     model_id = body.model_id.strip()
     if not model_id:
         raise HTTPException(status_code=400, detail="model_id is required.")
@@ -64,24 +61,24 @@ def launch_task(
     if body.case_name not in known_case_ids():
         raise HTTPException(status_code=400, detail=f"Unknown case: {body.case_name}")
 
-    live_ids = {entry["id"] for entry in list_openai_chat_models(body.decrypted_api_key)}
+    live_ids = {entry["id"] for entry in list_live_chat_models(provider, body.decrypted_api_key)}
     if model_id not in live_ids:
         raise HTTPException(status_code=400, detail="model_id is not available for this API key.")
 
-    task_id = run_launcher.create_task(user_id, body.case_name, _HOSTED_PROVIDER, model_id)
+    task_id = run_launcher.create_task(user_id, body.case_name, provider, model_id)
     background_tasks.add_task(
         run_launcher.run_task,
         task_id,
         user_id=user_id,
         case_name=body.case_name,
-        provider=_HOSTED_PROVIDER,
+        provider=provider,
         model_id=model_id,
         decrypted_api_key=body.decrypted_api_key,
     )
     return TaskSummary(
         id=task_id,
         case_name=body.case_name,
-        provider=_HOSTED_PROVIDER,
+        provider=provider,
         model_id=model_id,
         status="queued",
         started_at=None,

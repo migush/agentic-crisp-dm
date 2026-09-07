@@ -20,13 +20,9 @@ from maads.pricing import estimate_cost_usd
 
 from . import paths
 from .db import get_conn
+from .hosted import OLLAMA_CLOUD_BASE_URL, PARENT_ENV_DENYLIST, PROVIDER_ENV_VAR
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-# Hosted product is OpenAI-only. Inject OPENAI_API_KEY + MODEL into the child.
-PROVIDER_ENV_VAR = {
-    "openai": "OPENAI_API_KEY",
-}
 
 
 def _run_dir_for_case(artifact_root: Path, case_name: str) -> Path | None:
@@ -69,6 +65,8 @@ def run_task(
     _update_status(task_id, "running", started_at=started_at)
 
     child_env = {**_subprocess_base_env(), env_var: decrypted_api_key, "MODEL": model_id}
+    if provider == "ollama_cloud":
+        child_env["OLLAMA_BASE_URL"] = OLLAMA_CLOUD_BASE_URL
     try:
         result = subprocess.run(
             [
@@ -109,10 +107,10 @@ def run_task(
 def _subprocess_base_env() -> dict[str, str]:
     import os
 
-    # Deny-list the parent's own provider keys (e.g. a developer's local
-    # .env OPENAI_API_KEY) so a run can never silently fall back to them
+    # Deny-list the parent's own provider keys and Ollama host (e.g. a
+    # developer's local .env) so a run can never silently fall back to them
     # instead of the user's own stored key.
-    return {k: v for k, v in os.environ.items() if k not in PROVIDER_ENV_VAR.values()}
+    return {k: v for k, v in os.environ.items() if k not in PARENT_ENV_DENYLIST}
 
 
 def _update_status(task_id: int, status: str, *, started_at: str | None = None) -> None:

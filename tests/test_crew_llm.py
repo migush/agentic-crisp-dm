@@ -23,6 +23,8 @@ def _clear_llm_caches(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_MODEL_MID",
         "OPENAI_MODEL_CODE",
         "MAADS_SKIP_MODEL_PROBE",
+        "OLLAMA_API_KEY",
+        "OLLAMA_BASE_URL",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("MAADS_SKIP_MODEL_PROBE", "1")

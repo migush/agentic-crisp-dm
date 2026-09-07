@@ -68,6 +68,37 @@ def test_run_uses_the_launching_users_artifact_root(db_path, tmp_path, monkeypat
     assert "sk-secret" not in " ".join(cmd)
 
 
+def test_ollama_cloud_child_env_gets_key_and_cloud_host(db_path, tmp_path, monkeypatch):
+    captured: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["env"] = dict(kwargs.get("env") or {})
+        return subprocess.CompletedProcess(cmd, returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setenv("OPENAI_API_KEY", "parent-openai")
+    monkeypatch.setenv("OLLAMA_API_KEY", "parent-ollama")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    root = tmp_path / "u9"
+    monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: _mkdir(root))
+
+    make_user(db_path, 9)
+    task_id = run_launcher.create_task(9, "titanic", "ollama_cloud", "ollama/gpt-oss:120b")
+    run_launcher.run_task(
+        task_id, user_id=9, case_name="titanic", provider="ollama_cloud",
+        model_id="ollama/gpt-oss:120b", decrypted_api_key="user-ollama-key",
+    )
+
+    env = captured["env"]
+    cmd = captured["cmd"]
+    assert env["OLLAMA_API_KEY"] == "user-ollama-key"
+    assert env["OLLAMA_BASE_URL"] == "https://ollama.com"
+    assert env["MODEL"] == "ollama/gpt-oss:120b"
+    assert "OPENAI_API_KEY" not in env
+    assert "user-ollama-key" not in " ".join(cmd)
+
+
 def test_completion_records_spend_from_the_real_run_layout(db_path, tmp_path, monkeypatch):
     root = tmp_path / "u3"
     seed_finished_run(

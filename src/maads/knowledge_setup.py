@@ -8,6 +8,8 @@ from typing import Any
 
 from crewai.knowledge.source.text_file_knowledge_source import TextFileKnowledgeSource
 
+from maads.ollama_runtime import ollama_base_url
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text"
@@ -22,7 +24,7 @@ def skill_path(name: str) -> str:
 
 
 def _ollama_embeddings_url() -> str:
-    base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+    base = ollama_base_url()
     explicit = os.getenv("EMBEDDINGS_OLLAMA_URL") or os.getenv("OLLAMA_URL")
     if explicit:
         return explicit.rstrip("/")
