@@ -226,6 +226,10 @@ src/artifacts/*
 dashboard/node_modules/
 dashboard/dist/
 
+# webapp (account product) frontend build artifacts
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+
 # Editor settings (colleagues use other IDEs)
 .vscode/
 

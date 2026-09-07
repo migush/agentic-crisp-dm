@@ -259,8 +259,11 @@ def _kickoff(
     raw_output = str(output)
     _last_crew_output.set(raw_output)
     total_tokens = None
+    n_input = n_output = None
     try:
         total_tokens = int(output.token_usage.total_tokens)
+        n_input = int(output.token_usage.prompt_tokens)
+        n_output = int(output.token_usage.completion_tokens)
     except (AttributeError, TypeError, ValueError):
         pass
     _last_crew_tokens.set(total_tokens)
@@ -269,7 +272,7 @@ def _kickoff(
     try:
         if total_tokens is not None:
             provider = _resolve_llm_provider(agent_name)
-            state.add_tokens(agent_name, total_tokens, provider=provider)
+            state.add_tokens(agent_name, total_tokens, provider=provider, n_input=n_input, n_output=n_output)
     except (AttributeError, TypeError, ValueError):
         pass
     check_after_spend(state, agent_name)

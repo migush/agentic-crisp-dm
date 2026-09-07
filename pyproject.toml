@@ -13,6 +13,7 @@ dependencies = [
     # framework (>=1.10.1 required by openinference-instrumentation-crewai)
     "crewai>=1.10.1,<2.0",
     "crewai-tools>=1.10.1,<2.0",
+    "litellm>=1.60",  # community-maintained model cost map, used by pricing.py
     "ollama>=0.4",  # CrewAI Knowledge embeddings when EMBEDDINGS_PROVIDER=ollama
     # ML stack (Phase 1 fixed-baseline modeling)
     "pandas>=2.1",
@@ -32,6 +33,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "coverage>=7.4"]
 dashboard = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
+webapp = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "argon2-cffi>=23.1",
+    "PyJWT>=2.8",
+]
 
 [project.scripts]
 maads = "maads.__main__:main"
