@@ -1,26 +1,16 @@
-# Example reverse-proxy config for adding the account product alongside
-# whatever already proxies to the trace dashboard at maads.mirogeorgiev.eu.
-# Copy the relevant block into the box's real Caddyfile — this repo does not
-# manage that file directly, since the domain is deployed manually (see
+# Example reverse-proxy config for maads.mirogeorgiev.eu.
+# Copy this block into the box's real Caddyfile — this repo does not manage
+# that file directly, since the domain is deployed manually (see
 # webapp/README.md).
 #
 # Caddy gets free automatic HTTPS (Let's Encrypt) with no config beyond this.
+#
+# One backend serves everything: the account app owns the origin and mounts the
+# existing trace dashboard at /dashboard (webapp/backend/app.py). Splitting them
+# across two ports with `handle` blocks does not work — both apps serve their
+# own SPA at / and their own API at /api, so whichever block matched /api/*
+# silently broke the other app's entire UI.
 
 maads.mirogeorgiev.eu {
-	# Existing dashboard (leave as-is / adjust to match current config)
-	handle /dashboard* {
-		reverse_proxy 127.0.0.1:8765
-	}
-
-	# New account product: API
-	handle /api/* {
-		reverse_proxy 127.0.0.1:8766
-	}
-
-	# New account product: built frontend static assets
-	handle {
-		root * /srv/maads-webapp/dist
-		try_files {path} /index.html
-		file_server
-	}
+	reverse_proxy 127.0.0.1:8766
 }

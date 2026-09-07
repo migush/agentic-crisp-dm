@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from . import run_launcher
 from .db import get_conn
+from .paths import known_case_ids
 from .routes_auth import require_user
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -51,11 +52,17 @@ def launch_task(
 ) -> TaskSummary:
     if body.provider not in run_launcher.PROVIDER_ENV_VAR:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {body.provider}")
+    # case_name reaches both a filesystem path and the `maads run --case`
+    # argument, so it must be one of the configs that actually exist rather
+    # than whatever the client sent.
+    if body.case_name not in known_case_ids():
+        raise HTTPException(status_code=400, detail=f"Unknown case: {body.case_name}")
 
     task_id = run_launcher.create_task(user_id, body.case_name, body.provider, body.model_id)
     background_tasks.add_task(
         run_launcher.run_task,
         task_id,
+        user_id=user_id,
         case_name=body.case_name,
         provider=body.provider,
         model_id=body.model_id,

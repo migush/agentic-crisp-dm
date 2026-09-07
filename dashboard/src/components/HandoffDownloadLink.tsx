@@ -1,3 +1,4 @@
+import { BASE } from "../shared/api";
 import { useSelectedRun } from "../shared/selectedRun";
 
 interface Props {
@@ -12,7 +13,9 @@ export function HandoffDownloadLink({ caseId, show, className = "" }: Props) {
     return null;
   }
 
-  const href = `/api/cases/${caseId}/reports/handoff_standard.zip${
+  // A plain download anchor, so no auth header is possible — the hosted
+  // deployment authenticates it via the session cookie.
+  const href = `${BASE}/api/cases/${caseId}/reports/handoff_standard.zip${
     runId ? `?run_id=${encodeURIComponent(runId)}` : ""
   }`;
 
