@@ -84,6 +84,7 @@ Every specialist substep: `capabilities.execution_evidence` → crew `kickoff_su
 - `PythonExec` is a subprocess timeout, **not** a security sandbox.
 - Standalone dashboard has **no auth** and `CORS *` — local only. Communications contain full prompts.
 - Hosted runs start from webapp **Tasks**, not dashboard Launch (`launch_guard_dep` → 403; UI shows `LaunchUnavailable`).
+- Hosted Ollama model lists (`POST /api/models`) come from `/api/tags` then drop ids that 402/403 on a 1-token `/api/chat` probe.
 - Do not reverse-proxy webapp and dashboard as separate origins/paths; both claim `/` and `/api`. Mount model in `webapp/backend/app.py` is required.
 
 ## Env (see `.env.example`)

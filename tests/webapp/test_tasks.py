@@ -58,6 +58,25 @@ def test_launch_task_accepts_ollama_cloud(tmp_path, monkeypatch):
     assert calls[0]["decrypted_api_key"] == "ollama-secret"
 
 
+def test_launch_task_rejects_ollama_model_denied_by_plan(tmp_path, monkeypatch):
+    FakeOllamaTags.models = [{"name": "gpt-oss:120b"}, {"name": "glm-5.2"}]
+    FakeOllamaTags.chat_denied = {"glm-5.2": 402}
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    resp = client.post(
+        "/api/tasks",
+        json={
+            "case_name": "titanic",
+            "provider": "ollama_cloud",
+            "model_id": "ollama/glm-5.2",
+            "decrypted_api_key": "ollama-secret",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "model_id is not available for this API key."
+
+
 def test_launch_task_rejects_ollama_model_not_in_live_list(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
     headers = register(client)
