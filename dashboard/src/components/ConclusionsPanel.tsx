@@ -1,10 +1,15 @@
 import type { ReactNode } from "react";
+import { BASE } from "../shared/api";
 import type {
   ConclusionItem,
   ConclusionPhase,
   ProcessConclusions,
   ProcessDeliverable,
 } from "../shared/types";
+
+function deliverableHref(url: string): string {
+  return url.startsWith("/") ? `${BASE}${url}` : url;
+}
 
 interface Props {
   conclusions: ProcessConclusions | undefined;
@@ -206,9 +211,9 @@ export function ConclusionsPanel({ conclusions, deliverables, config }: Props) {
                   {d.exists ? "●" : "○"}
                 </span>
                 <span className="text-slate-500">{d.label}:</span>
-                {d.exists && d.url ? (
+                {d.url ? (
                   <a
-                    href={d.url}
+                    href={deliverableHref(d.url)}
                     className="text-accent hover:underline truncate"
                     download
                   >

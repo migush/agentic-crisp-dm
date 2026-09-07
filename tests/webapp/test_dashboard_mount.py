@@ -8,6 +8,8 @@ that every one of its routes now serves only the calling account's runs.
 from __future__ import annotations
 
 import json
+import zipfile
+from io import BytesIO
 
 import pytest
 import webapp.backend.db as db_module
@@ -140,3 +142,75 @@ def test_dashboard_launch_is_refused_when_hosted(client: TestClient) -> None:
 
     client.cookies.clear()  # register() also set a session cookie
     assert client.post("/dashboard/api/run", json={"case_id": "titanic"}).status_code == 401
+
+
+def _write_user_run_with_state(artifact_root, case_id: str, run_id: str) -> None:
+    """Write a completed run with final_state.json but no prebuilt reports."""
+    from maads.artifact_paths import ensure_run_layout
+    from maads.config import load_case_config
+    from maads.paths import resolve_path
+    from maads.state import CrispDMState, ModelRun, Phase
+
+    run_dir = artifact_root / case_id / "runs" / run_id
+    ensure_run_layout(run_dir, run_id=run_id, case_id=case_id)
+    (run_dir / "status.json").write_text(
+        json.dumps({"case_id": case_id, "run_id": run_id, "phase": 6, "halted": True}),
+        encoding="utf-8",
+    )
+    (artifact_root / case_id / "current").write_text(run_id, encoding="utf-8")
+    cfg = load_case_config(resolve_path(f"configs/{case_id}.yaml"))
+    state = CrispDMState.from_config(cfg)
+    state.halted = True
+    state.phase = Phase.DEPLOYMENT
+    state.substep = "6.4"
+    state.halt_reason = "completed phase 6"
+    state.md.chosen_model = ModelRun(
+        technique="test_model",
+        cv_score=0.9,
+        cv_std=0.01,
+        assessment="selected",
+    )
+    metric = cfg.success_criterion.metric
+    state.ev.assessment_of_dm_results = {
+        "metric": metric,
+        "achieved_score": 0.9,
+        "threshold": cfg.success_criterion.threshold,
+        "success_criterion_met": True,
+    }
+    state.ev.decision = "deploy"
+    sub = run_dir / "submission.csv"
+    sub.write_text("id,pred\n1,0\n", encoding="utf-8")
+    state.dep.submission_path = str(sub)
+    (run_dir / "final_report.md").write_text("# report\n", encoding="utf-8")
+    state.dep.final_report_path = str(run_dir / "final_report.md")
+    (run_dir / "final_state.json").write_text(state.model_dump_json(indent=2), encoding="utf-8")
+
+
+def test_cookie_downloads_user_workbook_and_handoff(client: TestClient) -> None:
+    # <a download> cannot send Authorization; hosted links rely on maads_session.
+    resp = client.post("/api/auth/register", json={"username": "hank"})
+    assert resp.status_code == 201
+
+    run_id = "b47ea0aa-e249-4f15-9d8f-0c65b2055b84"
+    _write_user_run_with_state(paths_module.user_artifact_root(1), "titanic", run_id)
+
+    notebook = client.get(
+        f"/dashboard/api/cases/titanic/reports/case_workbook.ipynb?run_id={run_id}",
+    )
+    assert notebook.status_code == 200
+    assert "nbformat" in notebook.text
+
+    handoff = client.get(
+        f"/dashboard/api/cases/titanic/reports/handoff_standard.zip?run_id={run_id}",
+    )
+    assert handoff.status_code == 200
+    assert handoff.headers["content-type"] == "application/zip"
+    assert zipfile.is_zipfile(BytesIO(handoff.content))
+
+    client.cookies.clear()
+    assert client.get(
+        f"/dashboard/api/cases/titanic/reports/case_workbook.ipynb?run_id={run_id}",
+    ).status_code == 401
+    assert client.get(
+        f"/dashboard/api/cases/titanic/reports/handoff_standard.zip?run_id={run_id}",
+    ).status_code == 401
