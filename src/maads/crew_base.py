@@ -146,8 +146,12 @@ def build_llm(agent_name: str, json_enforced: bool = True) -> LLM:
     """
     model = resolve_model_for_agent(agent_name)
     if model.startswith("ollama/"):
-        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        kwargs: dict = {"model": model, "base_url": base_url}
+        from maads.ollama_runtime import ollama_api_key, ollama_base_url
+
+        kwargs: dict = {"model": model, "base_url": ollama_base_url()}
+        api_key = ollama_api_key()
+        if api_key:
+            kwargs["api_key"] = api_key
         timeout = os.getenv("OLLAMA_REQUEST_TIMEOUT")
         if timeout:
             try:

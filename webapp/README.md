@@ -1,6 +1,6 @@
 # maads account product (webapp/)
 
-Adds accounts, BYO OpenAI keys, and per-task cost tracking on top of
+Adds accounts, BYO OpenAI and Ollama Cloud keys, and per-task cost tracking on top of
 the existing `maads` pipeline, served at `https://maads.mirogeorgiev.eu`.
 
 This app owns the origin and **mounts the existing trace dashboard**
@@ -31,8 +31,8 @@ repo's own `artifacts/` tree is additionally exposed to every account as
 ## Layout
 
 - `backend/` — FastAPI app: username-only JWT auth, ciphertext-only OpenAI
-  key storage, live model listing (`POST /api/models`), task launch/spend
-  reporting, per-user artifact roots (`paths.py`). SQLite file at
+  and Ollama Cloud key storage, live model listing (`POST /api/models` with
+  `provider`), task launch/spend reporting, per-user artifact roots (`paths.py`). SQLite file at
   `data/webapp.db` (gitignored). `init_db` migrates a live `users` table in
   place (`email` → `username`, preserve `id`); do not delete the database.
 - `frontend/` — React + TypeScript + Vite + Tailwind SPA. All API-key
@@ -85,18 +85,19 @@ and embeds report figures as `<img src>`, neither of which can carry an
 `Authorization` header. There is no revocation list — logout clears the cookie
 and the local token, but an already-issued JWT stays valid until it expires.
 
-The OpenAI API key is encrypted client-side (AES-GCM, key derived via PBKDF2
+The provider API key is encrypted client-side (AES-GCM, key derived via PBKDF2
 from a user-chosen passphrase) before it ever reaches the backend — the
 backend and its SQLite DB only ever hold ciphertext, unique per
-`(user_id, provider=openai)`. The plaintext key is sent only over HTTPS to
-`POST /api/models` (to list chat models for that key) and `POST /api/tasks`
-(to launch). `run_launcher.py` injects `OPENAI_API_KEY` and `MODEL` into the
-child env for the lifetime of `maads run` and never logs or persists them.
-Losing the passphrase means the stored key is unrecoverable by design — there
-is no reset path, only delete-and-re-add.
+`(user_id, provider)` for `openai` and `ollama_cloud`. The plaintext key is
+sent only over HTTPS to `POST /api/models` (to list chat models for that key)
+and `POST /api/tasks` (to launch). `run_launcher.py` injects `OPENAI_API_KEY`
+or `OLLAMA_API_KEY` (+ `OLLAMA_BASE_URL=https://ollama.com` for Ollama Cloud)
+and `MODEL` into the child env for the lifetime of `maads run` and never logs
+or persists them. Losing the passphrase means the stored key is unrecoverable
+by design — there is no reset path, only delete-and-re-add.
 
-Hosted product is OpenAI-only. Ollama stays in the standalone pipeline /
-local dashboard catalog.
+Hosted product accepts OpenAI and Ollama Cloud keys. Local Ollama (localhost)
+stays in the standalone pipeline / local dashboard catalog.
 
 ## Deployment
 

@@ -31,6 +31,18 @@ export const OPENAI_KEY_HELP: Step[] = [
   },
 ];
 
+export const OLLAMA_KEY_HELP: Step[] = [
+  { title: "Create an Ollama account", body: "Sign in at ollama.com if you don't have an account yet." },
+  { title: "Open API keys", body: "Go to ollama.com → Settings → API keys and create a new key." },
+  { title: "Copy the key", body: "Paste it below. Cloud model names come from that key at launch time, not a static list." },
+  {
+    title: "Set a passphrase",
+    body:
+      "Your key is encrypted in your browser before it's sent anywhere. Choose a passphrase you'll remember — " +
+      "if you forget it, the key can't be recovered and you'll need to delete and re-enter a new one.",
+  },
+];
+
 export const PASSPHRASE_HELP: Step[] = [
   {
     title: "Why a separate passphrase?",

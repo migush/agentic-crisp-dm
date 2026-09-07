@@ -13,6 +13,7 @@ import webapp.backend.db as db_module
 from fastapi.testclient import TestClient
 
 from tests.webapp.openai_stub import FakeOpenAI
+from tests.webapp.ollama_stub import FakeOllamaTags
 
 
 def make_client(tmp_path, monkeypatch):
@@ -29,7 +30,12 @@ def register(client, username="alice") -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_launch_task_rejects_ollama_cloud(tmp_path, monkeypatch):
+def test_launch_task_accepts_ollama_cloud(tmp_path, monkeypatch):
+    calls = []
+    import webapp.backend.run_launcher as run_launcher
+
+    monkeypatch.setattr(run_launcher, "run_task", lambda *a, **kw: calls.append(kw))
+
     client = make_client(tmp_path, monkeypatch)
     headers = register(client)
     resp = client.post(
@@ -37,8 +43,31 @@ def test_launch_task_rejects_ollama_cloud(tmp_path, monkeypatch):
         json={
             "case_name": "titanic",
             "provider": "ollama_cloud",
-            "model_id": "ollama/gpt-oss:20b-cloud",
-            "decrypted_api_key": "sk-x",
+            "model_id": "ollama/gpt-oss:120b",
+            "decrypted_api_key": "ollama-secret",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["provider"] == "ollama_cloud"
+    assert body["model_id"] == "ollama/gpt-oss:120b"
+    assert "ollama-secret" not in resp.text
+    assert FakeOllamaTags.last_authorization == "Bearer ollama-secret"
+    assert calls[0]["provider"] == "ollama_cloud"
+    assert calls[0]["decrypted_api_key"] == "ollama-secret"
+
+
+def test_launch_task_rejects_ollama_model_not_in_live_list(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    resp = client.post(
+        "/api/tasks",
+        json={
+            "case_name": "titanic",
+            "provider": "ollama_cloud",
+            "model_id": "ollama/does-not-exist",
+            "decrypted_api_key": "ollama-secret",
         },
         headers=headers,
     )

@@ -15,11 +15,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .db import get_conn
+from .hosted import require_hosted_provider
 from .routes_auth import require_user
 
 router = APIRouter(prefix="/api/keys", tags=["keys"])
-
-_HOSTED_PROVIDER = "openai"
 
 
 class StoredKey(BaseModel):
@@ -54,8 +53,7 @@ def list_keys(user_id: int = Depends(require_user)) -> list[StoredKey]:
 
 @router.put("", response_model=StoredKey)
 def upsert_key(body: StoreKeyRequest, user_id: int = Depends(require_user)) -> StoredKey:
-    if body.provider != _HOSTED_PROVIDER:
-        raise HTTPException(status_code=400, detail="Hosted keys must use provider=openai.")
+    require_hosted_provider(body.provider, kind="keys")
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         conn.execute(

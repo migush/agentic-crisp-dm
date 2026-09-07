@@ -46,6 +46,6 @@ pytest tests/webapp/ -q
 
 - Auth is username-only (no login password). `/register` and `/login` take `{ username }`.
 - Launch runs via `POST /api/tasks`, not dashboard `POST /api/run` (403 + `LaunchUnavailable`)
-- Hosted keys and launches are OpenAI-only. Tasks model dropdown comes from `POST /api/models` (live OpenAI list after passphrase unlock), not the static catalog.
+- Hosted keys and launches are OpenAI or Ollama Cloud (`provider=openai` / `ollama_cloud`). Tasks model dropdown comes from `POST /api/models` with `{ provider, decrypted_api_key }` (live list after passphrase unlock), not the static catalog.
 - User artifacts: `data/users/<id>/artifacts/`; demo reads repo `artifacts/`
-- Store keys as ciphertext only; plaintext key only in launcher child env (`OPENAI_API_KEY` + `MODEL`)
+- Store keys as ciphertext only; plaintext key only in launcher child env (`OPENAI_API_KEY` or `OLLAMA_API_KEY` + `MODEL`; Ollama Cloud also sets `OLLAMA_BASE_URL=https://ollama.com`)

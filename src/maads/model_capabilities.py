@@ -205,18 +205,21 @@ def _probe_openai_json_mode(client: Any, model: str) -> bool:
 
 def _probe_ollama(model: str) -> ModelJsonCapabilities:
     model_name = model.removeprefix("ollama/")
-    host = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
-    structured = _probe_ollama_structured(host, model_name)
-    json_mode = False if structured else _probe_ollama_json_mode(host, model_name)
+    structured = _probe_ollama_structured(model_name)
+    json_mode = False if structured else _probe_ollama_json_mode(model_name)
     return ModelJsonCapabilities(model, structured, json_mode)
 
 
-def _probe_ollama_json_mode(host: str, model_name: str) -> bool:
-    try:
-        import ollama
+def _ollama_probe_client() -> Any:
+    import ollama
+    from maads.ollama_runtime import ollama_client_kwargs
 
-        client = ollama.Client(host=host)
-        response = client.chat(
+    return ollama.Client(**ollama_client_kwargs())
+
+
+def _probe_ollama_json_mode(model_name: str) -> bool:
+    try:
+        response = _ollama_probe_client().chat(
             model=model_name,
             messages=[{"role": "user", "content": 'Return {"ok": true} as JSON only.'}],
             format="json",
@@ -229,12 +232,9 @@ def _probe_ollama_json_mode(host: str, model_name: str) -> bool:
         return False
 
 
-def _probe_ollama_structured(host: str, model_name: str) -> bool:
+def _probe_ollama_structured(model_name: str) -> bool:
     try:
-        import ollama
-
-        client = ollama.Client(host=host)
-        response = client.chat(
+        response = _ollama_probe_client().chat(
             model=model_name,
             messages=[{"role": "user", "content": "Return ok=true."}],
             format=_PROBE_SCHEMA,

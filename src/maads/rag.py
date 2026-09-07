@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from maads.knowledge_setup import knowledge_corpus_paths, resolve_embedder_config
+from maads.ollama_runtime import (
+    is_ollama_cloud_host,
+    ollama_auth_headers,
+    ollama_client_kwargs,
+)
 from maads.text_normalize import dedupe_passages, strip_markdown_headers
 from maads.state import CrispDMState
 
@@ -366,8 +371,7 @@ def _embed_ollama(texts: list[str]) -> list[list[float]]:
     try:
         import ollama
 
-        host = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
-        client = ollama.Client(host=host)
+        client = ollama.Client(**ollama_client_kwargs())
         resp = client.embed(model=model, input=texts)
         embeddings = resp.embeddings
         if embeddings and len(embeddings) == len(texts):
@@ -379,12 +383,13 @@ def _embed_ollama(texts: list[str]) -> list[list[float]]:
 
 def _embed_ollama_http(texts: list[str], model: str) -> list[list[float]]:
     cfg = resolve_embedder_config() or {}
-    url = (cfg.get("config") or {}).get("url") or "http://localhost:11434/api/embeddings"
+    url = (cfg.get("config") or {}).get("url") or f"{ollama_client_kwargs()['host']}/api/embeddings"
     out: list[list[float]] = []
+    headers = {"Content-Type": "application/json", **ollama_auth_headers()}
     for text in texts:
         body = json.dumps({"model": model, "prompt": text}).encode("utf-8")
         req = urllib.request.Request(
-            url, data=body, headers={"Content-Type": "application/json"}, method="POST",
+            url, data=body, headers=headers, method="POST",
         )
         with urllib.request.urlopen(req, timeout=120) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
@@ -422,6 +427,7 @@ def ensure_embedding_model_available() -> str | None:
     """Pull the default Ollama embedding model when using local embeddings.
 
     Returns a warning message when the model could not be verified, else None.
+    Does not ``ollama pull`` against ollama.com.
     """
     cfg = resolve_embedder_config()
     if cfg is None:
@@ -430,16 +436,16 @@ def ensure_embedding_model_available() -> str | None:
     try:
         import ollama
 
-        host = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
-        client = ollama.Client(host=host)
+        client = ollama.Client(**ollama_client_kwargs())
         client.show(model)
         return None
     except Exception:
+        if is_ollama_cloud_host():
+            return None
         try:
             import ollama
 
-            host = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
-            client = ollama.Client(host=host)
+            client = ollama.Client(**ollama_client_kwargs())
             _log.info("Pulling Ollama embedding model %s …", model)
             client.pull(model)
             return None

@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { decryptApiKey } from "../lib/crypto";
 import {
@@ -14,11 +15,15 @@ import {
   upsertStoredKey,
 } from "../lib/api";
 
-const HOSTED_PROVIDER = "openai";
+const HOSTED_PROVIDERS = ["openai", "ollama_cloud"] as const;
 
-function openaiBlob(stored: StoredKey, selectedModel: string) {
+function providerLabel(provider: string): string {
+  return provider === "ollama_cloud" ? "Ollama Cloud" : "OpenAI";
+}
+
+function keyBlob(stored: StoredKey, selectedModel: string) {
   return {
-    provider: HOSTED_PROVIDER,
+    provider: stored.provider,
     selected_model: selectedModel,
     ciphertext_b64: stored.ciphertext_b64,
     iv_b64: stored.iv_b64,
@@ -30,6 +35,7 @@ function openaiBlob(stored: StoredKey, selectedModel: string) {
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [storedKeys, setStoredKeys] = useState<StoredKey[]>([]);
+  const [provider, setProvider] = useState("openai");
   const [caseName, setCaseName] = useState("titanic");
   const [passphrase, setPassphrase] = useState("");
   const [decryptedApiKey, setDecryptedApiKey] = useState<string | null>(null);
@@ -38,7 +44,11 @@ export function TasksPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [spendByTask, setSpendByTask] = useState<Record<number, TokenSpendEvent[]>>({});
 
-  const openaiKey = storedKeys.find((k) => k.provider === HOSTED_PROVIDER);
+  const hostedKeys = useMemo(
+    () => storedKeys.filter((k) => (HOSTED_PROVIDERS as readonly string[]).includes(k.provider)),
+    [storedKeys],
+  );
+  const activeKey = hostedKeys.find((k) => k.provider === provider) ?? hostedKeys[0];
 
   function refreshTasks() {
     listTasks().then(setTasks);
@@ -46,45 +56,59 @@ export function TasksPage() {
 
   useEffect(() => {
     refreshTasks();
-    listStoredKeys().then(setStoredKeys);
+    listStoredKeys().then((keys) => {
+      setStoredKeys(keys);
+      const hosted = keys.filter((k) => (HOSTED_PROVIDERS as readonly string[]).includes(k.provider));
+      if (hosted.length === 1) {
+        setProvider(hosted[0].provider);
+      }
+    });
   }, []);
+
+  function onProviderChange(next: string) {
+    setProvider(next);
+    setDecryptedApiKey(null);
+    setModels([]);
+    setModelId("");
+    setStatus(null);
+  }
 
   async function persistSelectedModel(stored: StoredKey, nextModel: string) {
     if (!nextModel || stored.selected_model === nextModel) {
       return;
     }
-    const saved = await upsertStoredKey(openaiBlob(stored, nextModel));
-    setStoredKeys((prev) => [...prev.filter((k) => k.provider !== HOSTED_PROVIDER), saved]);
+    const saved = await upsertStoredKey(keyBlob(stored, nextModel));
+    setStoredKeys((prev) => [...prev.filter((k) => k.provider !== stored.provider), saved]);
   }
 
   async function onUnlock(e: FormEvent) {
     e.preventDefault();
     setStatus(null);
-    if (!openaiKey) {
-      setStatus("No stored OpenAI key — set one up in your profile first.");
+    if (!activeKey) {
+      setStatus("No stored API key — set one up in your profile first.");
       return;
     }
     let decrypted: string;
     try {
-      decrypted = await decryptApiKey(openaiKey, passphrase);
+      decrypted = await decryptApiKey(activeKey, passphrase);
     } catch {
       setStatus("Couldn't decrypt your key — check your passphrase.");
       return;
     }
     try {
-      const live = await fetchLiveModels(decrypted);
+      const live = await fetchLiveModels(activeKey.provider, decrypted);
       if (live.length === 0) {
         setStatus("This API key has no chat models available.");
         return;
       }
-      const pref = live.some((m) => m.id === openaiKey.selected_model)
-        ? openaiKey.selected_model
+      const pref = live.some((m) => m.id === activeKey.selected_model)
+        ? activeKey.selected_model
         : live[0].id;
       setDecryptedApiKey(decrypted);
       setModels(live);
       setModelId(pref);
       setPassphrase("");
-      await persistSelectedModel(openaiKey, pref);
+      await persistSelectedModel(activeKey, pref);
     } catch (err) {
       setStatus((err as Error).message);
     }
@@ -93,18 +117,18 @@ export function TasksPage() {
   async function onLaunch(e: FormEvent) {
     e.preventDefault();
     setStatus(null);
-    if (!openaiKey || !decryptedApiKey || !modelId) {
+    if (!activeKey || !decryptedApiKey || !modelId) {
       setStatus("Unlock your key and pick a model first.");
       return;
     }
     try {
       await launchTask({
         case_name: caseName,
-        provider: HOSTED_PROVIDER,
+        provider: activeKey.provider,
         model_id: modelId,
         decrypted_api_key: decryptedApiKey,
       });
-      await persistSelectedModel(openaiKey, modelId);
+      await persistSelectedModel(activeKey, modelId);
       setStatus(`Launched ${caseName} on ${modelId}.`);
       refreshTasks();
     } catch (err) {
@@ -117,14 +141,42 @@ export function TasksPage() {
     setSpendByTask((prev) => ({ ...prev, [taskId]: events }));
   }
 
+  const providerPicker =
+    hostedKeys.length > 1 ? (
+      <label className="block text-sm">
+        Provider
+        <select
+          className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-2"
+          value={provider}
+          onChange={(e) => onProviderChange(e.target.value)}
+        >
+          {hostedKeys.map((k) => (
+            <option key={k.provider} value={k.provider}>
+              {providerLabel(k.provider)}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
+
   return (
     <div className="mx-auto mt-16 max-w-2xl space-y-8">
       <div>
         <h1 className="mb-3 text-xl font-semibold">Launch a task</h1>
-        {decryptedApiKey === null ? (
+        {hostedKeys.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No stored API key — set one up in{" "}
+            <Link className="text-sky-400" to="/profile">
+              your profile
+            </Link>{" "}
+            first.
+          </p>
+        ) : decryptedApiKey === null ? (
           <form onSubmit={onUnlock} className="space-y-3">
+            {providerPicker}
             <p className="text-sm text-slate-400">
-              Unlock your stored OpenAI key to load the models that key can use.
+              Unlock your stored {providerLabel(activeKey?.provider ?? provider)} key to load the models that
+              key can use.
             </p>
             <label className="block text-sm">
               Passphrase (to unlock your key for this session)
@@ -143,6 +195,7 @@ export function TasksPage() {
           </form>
         ) : (
           <form onSubmit={onLaunch} className="space-y-3">
+            {providerPicker}
             <label className="block text-sm">
               Case
               <select
