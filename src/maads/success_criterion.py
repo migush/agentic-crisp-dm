@@ -72,6 +72,8 @@ def normalize_assessment(
     cv_score: float | None = None,
 ) -> dict[str, Any]:
     """Canonical dict for ``ev.assessment_of_dm_results``."""
+    if not isinstance(assessment, dict):
+        assessment = None
     out: dict[str, Any] = dict(assessment or {})
     dir_ = criterion_direction(
         out.get("metric") or out.get("evaluation_metric") or metric,

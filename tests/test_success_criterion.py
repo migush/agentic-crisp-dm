@@ -46,6 +46,28 @@ def test_normalize_assessment_recomputes_meets_from_score():
     assert out["cv_score"] == 0.1355
 
 
+def test_normalize_assessment_ignores_non_dict_llm_response():
+    out = normalize_assessment(
+        "Model achieved 0.819 accuracy, exceeding the 0.77 threshold.",
+        metric="accuracy",
+        threshold=0.77,
+        direction="maximize",
+        cv_score=0.819,
+    )
+    assert out["meets"] is True
+    assert out["cv_score"] == 0.819
+
+    out_list = normalize_assessment(
+        ["meets threshold"],
+        metric="accuracy",
+        threshold=0.77,
+        direction="maximize",
+        cv_score=0.5,
+    )
+    assert out_list["meets"] is False
+    assert out_list["cv_score"] == 0.5
+
+
 def test_assessment_meets_reads_either_field():
     assert assessment_meets({"meets": True}) is True
     assert assessment_meets({"success_criterion_met": True}) is True
