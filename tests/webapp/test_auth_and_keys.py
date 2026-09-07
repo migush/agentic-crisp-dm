@@ -180,7 +180,45 @@ def test_models_returns_filtered_ollama_cloud_list(tmp_path, monkeypatch):
     assert ids == ["ollama/gpt-oss:120b", "ollama/gpt-oss:20b"]
     assert FakeOllamaTags.last_authorization == "Bearer ollama-live"
     assert "nomic-embed-text" not in ids
+    assert "nomic-embed-text" not in FakeOllamaTags.last_chat_models
+    assert set(FakeOllamaTags.last_chat_models) == {"gpt-oss:120b", "gpt-oss:20b"}
     assert all(entry["id"].startswith("ollama/") for entry in body)
+
+
+def test_models_omits_ollama_models_denied_by_plan(tmp_path, monkeypatch):
+    FakeOllamaTags.models = [
+        {"name": "gpt-oss:120b"},
+        {"name": "glm-5.2"},
+        {"name": "kimi-k2.6"},
+    ]
+    FakeOllamaTags.chat_denied = {"glm-5.2": 402, "kimi-k2.6": 403}
+    client = make_client(tmp_path, monkeypatch)
+    token = client.post("/api/auth/register", json={"username": "ollama-plan"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/api/models",
+        json={"provider": "ollama_cloud", "decrypted_api_key": "ollama-live"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert [entry["id"] for entry in resp.json()] == ["ollama/gpt-oss:120b"]
+    assert set(FakeOllamaTags.last_chat_models) == {"gpt-oss:120b", "glm-5.2", "kimi-k2.6"}
+
+
+def test_models_keeps_ollama_model_when_chat_probe_is_flaky(tmp_path, monkeypatch):
+    FakeOllamaTags.chat_denied = {"gpt-oss:120b": 500}
+    client = make_client(tmp_path, monkeypatch)
+    token = client.post("/api/auth/register", json={"username": "ollama-flaky"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/api/models",
+        json={"provider": "ollama_cloud", "decrypted_api_key": "ollama-live"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert [entry["id"] for entry in resp.json()] == ["ollama/gpt-oss:120b", "ollama/gpt-oss:20b"]
 
 
 def test_models_invalid_ollama_key_returns_400(tmp_path, monkeypatch):
