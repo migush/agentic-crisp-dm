@@ -1,0 +1,53 @@
+name: Easy deploy to MAADS VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .deploy/maads-webapp.trigger
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: Commit SHA on main to deploy; defaults to the workflow SHA
+        required: false
+        type: string
+
+concurrency:
+  group: maads-vps-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy MAADS webapp on VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+      DEPLOY_BRANCH: main
+      DEPLOY_SHA: ${{ inputs.deploy_ref || github.sha }}
+    steps:
+      - name: Validate required secrets
+        run: |
+          test -n "${{ secrets.VPS_SSH_HOST }}" || { echo 'Missing secret: VPS_SSH_HOST'; exit 1; }
+          test -n "${{ secrets.VPS_SSH_USER }}" || { echo 'Missing secret: VPS_SSH_USER'; exit 1; }
+          test -n "${{ secrets.VPS_SSH_PRIVATE_KEY }}" || { echo 'Missing secret: VPS_SSH_PRIVATE_KEY'; exit 1; }
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_PRIVATE_KEY }}" > ~/.ssh/maads_vps_key
+          chmod 600 ~/.ssh/maads_vps_key
+          ssh-keyscan -p "$VPS_SSH_PORT" -H "${{ secrets.VPS_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Run deploy script on VPS
+        run: |
+          ssh -i ~/.ssh/maads_vps_key \
+            -p "$VPS_SSH_PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${{ secrets.VPS_SSH_USER }}@${{ secrets.VPS_SSH_HOST }}" \
+            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_SHA='$DEPLOY_SHA' /root/work/deploy/maads-webapp/deploy.sh"
