@@ -27,6 +27,49 @@ _ASTRA_EFFORTS = frozenset({"low", "medium", "high", "xhigh"})
 _GPT56_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh"})
 _GENERIC_REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 
+_crewai_wire_patch_installed = False
+
+
+def install_crewai_reasoning_effort_wire_patch() -> None:
+    """Make CrewAI always put ``reasoning_effort`` on chat-completion requests.
+
+    CrewAI's ``OpenAICompletion._prepare_completion_params`` only forwards
+    ``reasoning_effort`` when ``is_o1_model`` (``"o1" in model``). Models such
+    as ``gpt-6-astra`` need an explicit effort; omitting it makes the API
+    default to ``none``, which astra rejects with HTTP 400.
+
+    Idempotent. Safe no-op if the CrewAI layout is older/missing.
+    """
+    global _crewai_wire_patch_installed
+    if _crewai_wire_patch_installed:
+        return
+    try:
+        from crewai.llms.providers.openai.completion import OpenAICompletion
+    except ImportError:
+        return
+
+    if getattr(OpenAICompletion, "_maads_reasoning_effort_patch", False):
+        _crewai_wire_patch_installed = True
+        return
+
+    original = OpenAICompletion._prepare_completion_params
+
+    def _prepare_completion_params(self, messages, tools=None):  # type: ignore[no-untyped-def]
+        params = original(self, messages, tools)
+        effort = getattr(self, "reasoning_effort", None)
+        if not effort or effort == "none":
+            extra = getattr(self, "additional_params", None) or {}
+            effort = extra.get("reasoning_effort")
+        if effort and effort != "none":
+            params["reasoning_effort"] = effort
+        elif params.get("reasoning_effort") == "none":
+            params.pop("reasoning_effort", None)
+        return params
+
+    OpenAICompletion._prepare_completion_params = _prepare_completion_params  # type: ignore[method-assign]
+    OpenAICompletion._maads_reasoning_effort_patch = True
+    _crewai_wire_patch_installed = True
+
 
 def _model_leaf(model: str) -> str:
     return model.strip().lower().rsplit("/", 1)[-1]
@@ -135,6 +178,7 @@ def resolve_all_agent_llm_params() -> dict[str, AgentLlmParams]:
 
 def preflight_llm_params() -> list[str]:
     """Return errors for illegal per-agent LLM params; empty = ok to start."""
+    install_crewai_reasoning_effort_wire_patch()
     errors: list[str] = []
     for name in AGENT_NAMES:
         try:

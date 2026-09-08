@@ -165,11 +165,26 @@ def build_llm(agent_name: str, json_enforced: bool = True) -> LLM:
         response_format = _json_response_format_for_agent(agent_name, model)
         if response_format is not None:
             kwargs["response_format"] = response_format
-    from maads.llm_params import resolve_agent_llm_params
+    from maads.llm_params import (
+        install_crewai_reasoning_effort_wire_patch,
+        resolve_agent_llm_params,
+    )
 
+    install_crewai_reasoning_effort_wire_patch()
     params = resolve_agent_llm_params(agent_name, model)
     if params.reasoning_effort is not None:
-        kwargs["reasoning_effort"] = params.reasoning_effort
+        # CrewAI's OpenAICompletion only copies ``reasoning_effort`` into chat
+        # completion params when ``is_o1_model`` (substring "o1"). Models like
+        # gpt-6-astra need the value on the wire anyway — omitting it makes the
+        # API default to ``none``, which astra rejects. Set the attribute, put
+        # it in ``additional_params`` (merged into the request body), and rely
+        # on :func:`install_crewai_reasoning_effort_wire_patch` so copies still
+        # forward the attribute even if additional_params is stripped.
+        effort = params.reasoning_effort
+        kwargs["reasoning_effort"] = effort
+        extra = dict(kwargs.get("additional_params") or {})
+        extra["reasoning_effort"] = effort
+        kwargs["additional_params"] = extra
     try:
         return LLM(**kwargs)
     except (ImportError, TypeError, ValueError):
@@ -177,6 +192,8 @@ def build_llm(agent_name: str, json_enforced: bool = True) -> LLM:
         try:
             return LLM(**kwargs)
         except (ImportError, TypeError, ValueError):
+            # Keep additional_params.reasoning_effort even if the top-level
+            # attribute is rejected by an older CrewAI build.
             kwargs.pop("reasoning_effort", None)
             return LLM(**kwargs)
 
