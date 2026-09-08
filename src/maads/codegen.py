@@ -227,6 +227,8 @@ def _build_instruction(
         "Write Python 3 code to accomplish the task above.",
         f"These variables are ALREADY DEFINED for you (do not redefine): {var_list}.",
         "DATASET_INSPECT_JSON is a JSON string from inspect_dataset — parse with json.loads if needed.",
+        "Use ONLY the injected TRAIN_CSV / TEST_CSV / SOURCE_PATHS (and other header vars). "
+        "Do NOT call os.walk, pathlib.rglob, or recursively search under data/ to find files.",
         "Your code MUST finish by printing exactly one line to stdout: a single "
         f"JSON object. {contract_hint}",
         "Return ONLY a ```python ...``` code block — no prose before or after.",

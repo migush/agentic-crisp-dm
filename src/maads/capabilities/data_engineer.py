@@ -18,6 +18,7 @@ from maads.capabilities.shared import (
     prep_workdir as _prep_workdir,
     describe_data_contract as _describe_data_contract,
     measure_prep_artifacts as _measure_prep_artifacts,
+    require_inspect_ok as _require_inspect_ok,
     target_preserved as _target_preserved,
 )
 from maads.config import primary_train_csv, source_locations
@@ -50,6 +51,7 @@ def execution_evidence(
     target = state.resolved_target()
     idc = state.config.id_column
     ds_ctx = _de_dataset_context(state, train, test)
+    _require_inspect_ok(ds_ctx)
     sources_json = json.dumps(source_locations(state.config.data))
     missing_note = (
         " Missing TEST_CSV or sample submission is work for this phase, not an upload error: "

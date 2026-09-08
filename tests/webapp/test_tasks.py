@@ -195,6 +195,34 @@ def test_launch_task_rejects_blank_model_id(tmp_path, monkeypatch):
     assert resp.status_code == 400
 
 
+def test_launch_task_rejects_preflight_failure(tmp_path, monkeypatch):
+    """HTTP 400 when demo data paths fail preflight (no subprocess)."""
+    import webapp.backend.run_launcher as run_launcher
+
+    calls = []
+    monkeypatch.setattr(run_launcher, "run_task", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setattr(
+        "maads.preflight.preflight_case",
+        lambda _cfg: ["train not found or not a file: /missing/train.csv"],
+    )
+
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    resp = client.post(
+        "/api/tasks",
+        json={
+            "case_name": "titanic",
+            "provider": "openai",
+            "model_id": "gpt-5.4-mini",
+            "decrypted_api_key": "sk-x",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert "train not found" in resp.json()["detail"]
+    assert calls == []
+
+
 def test_launch_task_queues_and_never_echoes_key(tmp_path, monkeypatch):
     calls = []
     import webapp.backend.run_launcher as run_launcher

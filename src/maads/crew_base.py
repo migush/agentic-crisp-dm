@@ -160,16 +160,25 @@ def build_llm(agent_name: str, json_enforced: bool = True) -> LLM:
                 pass
         return LLM(**kwargs)
 
-    kwargs = {"model": model}
+    kwargs: dict[str, Any] = {"model": model}
     if json_enforced:
         response_format = _json_response_format_for_agent(agent_name, model)
         if response_format is not None:
             kwargs["response_format"] = response_format
+    from maads.llm_params import resolve_agent_llm_params
+
+    params = resolve_agent_llm_params(agent_name, model)
+    if params.reasoning_effort is not None:
+        kwargs["reasoning_effort"] = params.reasoning_effort
     try:
         return LLM(**kwargs)
     except (ImportError, TypeError, ValueError):
         kwargs.pop("response_format", None)
-        return LLM(**kwargs)
+        try:
+            return LLM(**kwargs)
+        except (ImportError, TypeError, ValueError):
+            kwargs.pop("reasoning_effort", None)
+            return LLM(**kwargs)
 
 
 def _tools_for(name: str) -> list[Any]:

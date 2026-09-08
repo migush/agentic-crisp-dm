@@ -330,3 +330,63 @@ print(json.dumps({"train_out": tp, "test_out": sp,
     pyexec = PythonExec(workdir=tmp_path / "sandbox")
     with pytest.raises(crew.CrewKickoffError):
         execution_evidence(pyexec, state, "3.4", tmp_path)
+
+
+def test_execution_evidence_inspect_error_skips_authored_code(monkeypatch, state, tmp_path):
+    """Missing train must fail closed before any sandbox authoring."""
+    calls: list[str] = []
+
+    def boom(*a, **k):
+        calls.append("run_authored_code")
+        raise AssertionError("run_authored_code must not be called")
+
+    monkeypatch.setattr(
+        "maads.capabilities.data_engineer.run_authored_code",
+        boom,
+    )
+    state.config = state.config.model_copy(
+        update={
+            "data": state.config.data.model_copy(
+                update={"train_csv": str(tmp_path / "missing_train.csv"), "test_csv": None}
+            )
+        }
+    )
+    state.substep = "2.1"
+    pyexec = PythonExec(workdir=tmp_path / "sandbox")
+    with pytest.raises(RuntimeError, match="dataset inspect failed"):
+        execution_evidence(pyexec, state, "2.1", tmp_path)
+    assert calls == []
+
+
+def test_measure_prep_artifacts_missing_source_train(tmp_path):
+    from maads.capabilities.shared import measure_prep_artifacts
+
+    train_pq = tmp_path / "train.parquet"
+    test_pq = tmp_path / "test.parquet"
+    pd.DataFrame({"a": [1], "y": [0]}).to_parquet(train_pq)
+    pd.DataFrame({"a": [2]}).to_parquet(test_pq)
+    out = measure_prep_artifacts(
+        source_train=str(tmp_path / "gone.csv"),
+        source_test="",
+        train_parquet=str(train_pq),
+        test_parquet=str(test_pq),
+        target="y",
+        payload_derived=["feat"],
+        payload_dropped=["id"],
+    )
+    assert out["merged_data"]["train_rows"] == 1
+    assert "source train missing" in out["data_cleaning_report"]["source"]
+
+
+def test_codegen_instruction_forbids_filesystem_search():
+    from maads.codegen import _build_instruction
+
+    text = _build_instruction(
+        "do work",
+        {"TRAIN_CSV": "/x", "SOURCE_PATHS": "[]"},
+        "Required keys: ok",
+        None,
+        None,
+    )
+    assert "os.walk" in text
+    assert "SOURCE_PATHS" in text

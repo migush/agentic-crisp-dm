@@ -86,6 +86,16 @@ def de_dataset_context(state: CrispDMState, train: str, test: str) -> dict[str, 
     return {"DATASET_INSPECT_JSON": json.dumps(summary, default=str)}
 
 
+def require_inspect_ok(ds_ctx: dict[str, Any]) -> None:
+    """Raise if inspect already reported a hard error (skip sandbox thrash)."""
+    raw = ds_ctx.get("DATASET_INSPECT_JSON")
+    if not raw:
+        return
+    summary = json.loads(raw) if isinstance(raw, str) else raw
+    if isinstance(summary, dict) and summary.get("error"):
+        raise RuntimeError(f"dataset inspect failed: {summary['error']}")
+
+
 def has_keys(payload: dict, *keys: str) -> list[str]:
     return [f"missing key '{k}'" for k in keys if k not in payload]
 
@@ -211,37 +221,49 @@ def measure_prep_artifacts(
 ) -> dict[str, Any]:
     import pandas as pd
 
-    src_tr = pd.read_csv(source_train)
-    if source_test and Path(source_test).exists():
-        src_te = pd.read_csv(source_test)
+    src_train_path = Path(source_train) if source_train else None
+    if src_train_path is not None and src_train_path.is_file():
+        src_tr = pd.read_csv(src_train_path)
     else:
-        src_te = pd.DataFrame()
+        src_tr = pd.DataFrame()
     prep_tr = pd.read_parquet(train_parquet)
-    if test_parquet and Path(test_parquet).exists():
+    if test_parquet and Path(test_parquet).is_file():
         prep_te = pd.read_parquet(test_parquet)
     else:
         prep_te = pd.DataFrame()
 
-    dropped = [c for c in src_tr.columns if c not in prep_tr.columns and c not in {target}]
+    if len(src_tr.columns):
+        dropped = [c for c in src_tr.columns if c not in prep_tr.columns and c not in {target}]
+    else:
+        dropped = list(payload_dropped or [])
     if payload_dropped:
         dropped = list(dict.fromkeys([*payload_dropped, *dropped]))
 
-    new_cols = [c for c in prep_tr.columns if c not in src_tr.columns]
+    new_cols = [c for c in prep_tr.columns if c not in src_tr.columns] if len(src_tr.columns) else []
     derived_names = list(payload_derived) if payload_derived else new_cols
     derived_items = [
         item if isinstance(item, dict) else {"field": str(item), "source": "measured"}
         for item in derived_names
     ]
 
-    missing_before = {c: int(src_tr[c].isna().sum()) for c in src_tr.columns}
+    missing_before = (
+        {c: int(src_tr[c].isna().sum()) for c in src_tr.columns}
+        if len(src_tr.columns)
+        else {}
+    )
     missing_after = {c: int(prep_tr[c].isna().sum()) for c in prep_tr.columns}
 
+    source_note = (
+        "measured from source CSV vs prepared parquet"
+        if len(src_tr.columns)
+        else "measured from prepared parquets only (source train missing)"
+    )
     return {
         "data_cleaning_report": {
             "missing_before": missing_before,
             "missing_after_train": missing_after,
             "columns_dropped": dropped,
-            "source": "measured from source CSV vs prepared parquet",
+            "source": source_note,
         },
         "derived_attributes": {"items": derived_items},
         "merged_data": {
