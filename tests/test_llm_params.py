@@ -65,7 +65,8 @@ def test_build_llm_sets_effort_for_astra(monkeypatch: pytest.MonkeyPatch) -> Non
     reset_llm_caches()
     llm = build_llm("pm")
     assert getattr(llm, "reasoning_effort", None) == "medium"
-    assert (getattr(llm, "additional_params", None) or {}).get("reasoning_effort") == "medium"
+    # Must NOT leak into additional_params — that breaks Responses.create().
+    assert "reasoning_effort" not in (getattr(llm, "additional_params", None) or {})
 
 
 def test_build_llm_puts_effort_on_wire_for_non_o1(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,6 +96,27 @@ def test_wire_patch_forwards_attribute_without_additional_params(
     assert llm.is_o1_model is False
     params = llm._prepare_completion_params([{"role": "user", "content": "ping"}])
     assert params.get("reasoning_effort") == "high"
+
+
+def test_responses_api_uses_reasoning_effort_dict_not_kwarg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """gpt-5.5-pro Responses path must not pass reasoning_effort= to create()."""
+    from crewai import LLM
+
+    from maads.llm_params import install_crewai_reasoning_effort_wire_patch
+
+    install_crewai_reasoning_effort_wire_patch()
+    llm = LLM(
+        model="gpt-5.5-pro",
+        api="responses",
+        reasoning_effort="medium",
+        # Simulate the PR #13 leak that caused TypeError on Responses.create.
+        additional_params={"reasoning_effort": "medium"},
+    )
+    params = llm._prepare_responses_params([{"role": "user", "content": "ping"}])
+    assert "reasoning_effort" not in params
+    assert params.get("reasoning") == {"effort": "medium"}
 
 
 def test_rejects_none_override_when_disallowed(monkeypatch: pytest.MonkeyPatch) -> None:
