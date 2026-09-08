@@ -53,3 +53,22 @@ export const PASSPHRASE_HELP: Step[] = [
     body: "Nobody — including us — can recover a lost passphrase. Write it down somewhere safe, or reuse a password manager entry.",
   },
 ];
+
+export const CASE_UPLOAD_HELP: Step[] = [
+  {
+    title: "Describe the problem in your own words",
+    body: "What should be predicted, what one row represents, and why it matters. You can attach a PDF or markdown note.",
+  },
+  {
+    title: "Upload the CSVs you have",
+    body: "UTF-8 is preferred; latin-1 and other common 8-bit encodings are accepted. A separate test file and sample submission are optional. Do not reshape files into a Kaggle package first — MAADS agents understand and prepare the data during the run.",
+  },
+  {
+    title: "Review the observations",
+    body: "You will see column names, row counts, encoding, missingness, and unique-value counts. These are facts, not a prep script. You may name a suspected target or ID, or leave that to the agents.",
+  },
+  {
+    title: "Mark ready and launch from Tasks",
+    body: "The same case can be launched many times with OpenAI or Ollama Cloud and any live model. V1 runs supervised tabular/text classification and regression. Clustering, images, and multi-table cases are not runnable yet.",
+  },
+];

@@ -24,7 +24,7 @@ SQLite file: `data/webapp.db` (gitignored via `data/`). On startup `init_db` mig
 cd webapp/frontend && npm install && npm run dev
 ```
 
-Port **5174**, proxy `/api` → `127.0.0.1:8766`. Routes: `/login`, `/register`, `/profile`, `/tasks`. Dashboard is a separate SPA at `/dashboard/` (needs `dashboard/dist` on the backend process).
+Port **5174**, proxy `/api` → `127.0.0.1:8766`. Routes: `/login`, `/register`, `/profile`, `/cases`, `/tasks`. Dashboard is a separate SPA at `/dashboard/` (needs `dashboard/dist` on the backend process).
 
 ## Full origin (how deploy works)
 

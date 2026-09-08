@@ -61,7 +61,7 @@ def _text_modeling_hint(state: CrispDMState) -> str:
 _TEXT_HEADER_HELPERS = """
 import numpy as np
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer
+from sklearn.preprocessing import FunctionTransformer, LabelEncoder
 
 def drop_feature_columns(df):
     return df.drop(columns=[c for c in (TARGET, ID_COL) if c in df.columns])
@@ -76,6 +76,21 @@ def text_vectorizer_pipeline(**tfidf_kwargs):
         ("to_str", FunctionTransformer(_to_1d_str, validate=False)),
         ("tfidf", TfidfVectorizer(**tfidf_kwargs)),
     ])
+
+def classification_target_values(series):
+    import pandas as pd
+    s = pd.Series(series)
+    numeric = pd.to_numeric(s, errors="coerce")
+    if numeric.notna().all() and (numeric == numeric.round()).all():
+        y = numeric.astype(int).values
+        classes = sorted(set(y.tolist()))
+        return y, classes, None
+    le = LabelEncoder()
+    y = le.fit_transform(s.astype(str).values)
+    return y, list(le.classes_), le
+
+def logistic_solver_for(n_classes):
+    return "liblinear" if n_classes <= 2 else "lbfgs"
 """
 
 
@@ -92,7 +107,8 @@ from sklearn.metrics import f1_score, make_scorer, get_scorer
 
 train = pd.read_parquet(TRAIN_PARQUET)
 X = drop_feature_columns(train)
-y = train[TARGET].astype(int).values
+y, class_values, _le = classification_target_values(train[TARGET])
+n_classes = len(set(y.tolist()))
 train_cols = json.loads(TRAIN_COLUMNS)
 primary_text = PRIMARY_TEXT_COL if PRIMARY_TEXT_COL in X.columns else None
 text_cols = [
@@ -119,11 +135,14 @@ if num_cols:
     ))
 pre = ColumnTransformer(transformers, remainder="drop")
 technique = "tfidf_logreg"
-clf = LogisticRegression(max_iter=2000, solver="liblinear", class_weight="balanced", random_state=42)
+clf = LogisticRegression(max_iter=2000, solver=logistic_solver_for(n_classes), class_weight="balanced", random_state=42)
 pipe = Pipeline([("pre", pre), ("clf", clf)])
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 if str(METRIC).lower() == "f1":
-    scorer = make_scorer(f1_score, pos_label=1)
+    if n_classes <= 2 and set(class_values) <= {0, 1}:
+        scorer = make_scorer(f1_score, pos_label=1)
+    else:
+        scorer = make_scorer(f1_score, average="macro")
 else:
     scorer = get_scorer(METRIC)
 scores = cross_validate(pipe, X, y, cv=cv, scoring={"metric": scorer}, return_train_score=False)
@@ -159,7 +178,8 @@ from sklearn.base import clone
 
 train = pd.read_parquet(TRAIN_PARQUET)
 X = drop_feature_columns(train)
-y = train[TARGET].astype(int).values
+y, class_values, _le = classification_target_values(train[TARGET])
+n_classes = len(set(y.tolist()))
 train_cols = json.loads(TRAIN_COLUMNS)
 primary_text = PRIMARY_TEXT_COL if PRIMARY_TEXT_COL in X.columns else None
 text_cols = [
@@ -185,14 +205,20 @@ if num_cols:
         num_cols,
     ))
 pre = ColumnTransformer(transformers, remainder="drop")
-clf = LogisticRegression(max_iter=2000, solver="liblinear", class_weight="balanced", random_state=42)
+clf = LogisticRegression(max_iter=2000, solver=logistic_solver_for(n_classes), class_weight="balanced", random_state=42)
 pipe = Pipeline([("pre", pre), ("clf", clf)])
 technique = MODEL_TECHNIQUE or "tfidf_logreg"
 figures_dir = FIGURES_DIR
 os.makedirs(figures_dir, exist_ok=True)
 class_labels_map = json.loads(CLASS_LABELS) if isinstance(CLASS_LABELS, str) else (CLASS_LABELS or {})
-labels_sorted = [0, 1]
-label_names = [class_labels_map.get(str(l), str(l)) for l in labels_sorted]
+cm_labels = sorted(set(y.tolist()))
+binary_01 = n_classes <= 2 and _le is None and set(class_values) <= {0, 1}
+label_names = []
+for l in cm_labels:
+    if _le is not None:
+        label_names.append(str(class_values[l]))
+    else:
+        label_names.append(class_labels_map.get(str(l), str(l)))
 
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 oof_pred = np.zeros(len(y), dtype=int)
@@ -202,19 +228,26 @@ for tr_idx, va_idx in cv.split(X, y):
     est.fit(X.iloc[tr_idx], y[tr_idx])
     preds = est.predict(X.iloc[va_idx])
     oof_pred[va_idx] = preds
-    cv_scores.append(float(f1_score(y[va_idx], preds, pos_label=1)))
+    if binary_01:
+        cv_scores.append(float(f1_score(y[va_idx], preds, pos_label=1)))
+    else:
+        cv_scores.append(float(f1_score(y[va_idx], preds, average="macro")))
 
-cm = confusion_matrix(y, oof_pred, labels=labels_sorted).tolist()
+cm = confusion_matrix(y, oof_pred, labels=cm_labels).tolist()
 prec, rec, f1, support = precision_recall_fscore_support(
-    y, oof_pred, labels=labels_sorted, average=None, zero_division=0,
+    y, oof_pred, labels=cm_labels, average=None, zero_division=0,
 )
+if binary_01 and 1 in cm_labels:
+    metrics_f1 = float(f1[cm_labels.index(1)])
+else:
+    metrics_f1 = float(f1_score(y, oof_pred, average="macro"))
 metrics = {
     "accuracy": float(accuracy_score(y, oof_pred)),
     "balanced_accuracy": float(balanced_accuracy_score(y, oof_pred)),
-    "f1": float(f1[1]),
+    "f1": metrics_f1,
 }
-for i, lbl in enumerate(labels_sorted):
-    name = class_labels_map.get(str(lbl), str(lbl))
+for i, lbl in enumerate(cm_labels):
+    name = label_names[i]
     metrics[f"precision_{name}"] = float(prec[i])
     metrics[f"recall_{name}"] = float(rec[i])
     metrics[f"f1_{name}"] = float(f1[i])
@@ -222,8 +255,8 @@ for i, lbl in enumerate(labels_sorted):
 fig_paths = []
 fig, ax = plt.subplots(figsize=(5, 4))
 ax.imshow(cm, cmap="Blues")
-ax.set_xticks(range(len(labels_sorted)))
-ax.set_yticks(range(len(labels_sorted)))
+ax.set_xticks(range(len(cm_labels)))
+ax.set_yticks(range(len(cm_labels)))
 ax.set_xticklabels(label_names)
 ax.set_yticklabels(label_names)
 ax.set_xlabel("Predicted")
@@ -434,8 +467,10 @@ def execution_evidence(
                         "TRAIN_PARQUET, rebuilds the pipeline for MODEL_TECHNIQUE from 4.3 "
                         "(pipelines are not persisted between substeps — reconstruct in code), "
                         "produces out-of-fold predictions via stratified CV, computes "
-                        "problem-type-appropriate metrics (for binary classification: accuracy, "
-                        "balanced accuracy, per-class precision/recall/F1, confusion matrix), "
+                        "problem-type-appropriate metrics (for classification of any "
+                        "cardinality: accuracy, balanced accuracy, per-class precision/"
+                        "recall/F1, confusion matrix over the observed labels — do not "
+                        "hardcode [0, 1]; for regression: error metrics matching EVAL_METRIC), "
                         "saves figures under FIGURES_DIR using matplotlib only (no seaborn), "
                         "and prints evaluation_bundle. Use CLASS_LABELS for human-readable names. "
                         "evaluation_bundle must include problem_type, metrics (flat float map), "

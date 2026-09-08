@@ -257,9 +257,15 @@ def _read_winning_code(paths: RunPaths, row: dict[str, Any]) -> str | None:
     )
 
 
-def _repo_relative_posix(path: str | Path) -> str:
+def _repo_relative_posix(path: str | Path | None) -> str:
     """Repo-relative path as a plain POSIX string for notebook code cells."""
-    return Path(path).relative_to(repo_root()).as_posix()
+    if not path:
+        return ""
+    p = Path(path)
+    try:
+        return p.resolve().relative_to(repo_root()).as_posix()
+    except ValueError:
+        return str(p.resolve())
 
 
 def _setup_cell_source(state: CrispDMState) -> str:

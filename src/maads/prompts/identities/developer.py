@@ -21,7 +21,7 @@ _SUBSTEP_ASSIGNMENTS: dict[str, dict[str, Any]] = {
             "dep.submission_path"
         ],
         "completion_criteria": [
-            "submission validated against sample_submission_csv before write",
+            "submission written; validated against sample_submission_csv when that file exists",
             "dep.submission_path set to verified artifact"
         ],
         "constraints": [

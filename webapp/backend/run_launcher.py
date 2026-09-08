@@ -53,6 +53,7 @@ def run_task(
     provider: str,
     model_id: str,
     decrypted_api_key: str,
+    config_path: str | None = None,
 ) -> None:
     """Run synchronously (call from a FastAPI BackgroundTask). Never raises past logging."""
     env_var = PROVIDER_ENV_VAR.get(provider)
@@ -67,14 +68,15 @@ def run_task(
     child_env = {**_subprocess_base_env(), env_var: decrypted_api_key, "MODEL": model_id}
     if provider == "ollama_cloud":
         child_env["OLLAMA_BASE_URL"] = OLLAMA_CLOUD_BASE_URL
+    argv = [sys.executable, "-m", "maads", "run"]
+    if config_path:
+        argv.extend(["--config", config_path])
+    else:
+        argv.extend(["--case", case_name])
+    argv.extend(["--model", model_id, "--artifact-dir", str(artifact_root)])
     try:
         result = subprocess.run(
-            [
-                sys.executable, "-m", "maads", "run",
-                "--case", case_name,
-                "--model", model_id,
-                "--artifact-dir", str(artifact_root),
-            ],
+            argv,
             cwd=REPO_ROOT,
             env=child_env,
             capture_output=True,

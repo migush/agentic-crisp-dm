@@ -38,12 +38,13 @@ jupyter>=1.0
 """
 
 
+def _file_name(path: str | None) -> str:
+    return Path(path).name if path else ""
+
+
 def build_case_config_meta(state: CrispDMState) -> dict[str, Any]:
     cfg = state.config
     sc = cfg.success_criterion
-    train_name = Path(cfg.data.train_csv).name
-    test_name = Path(cfg.data.test_csv).name
-    sample_name = Path(cfg.data.sample_submission_csv).name
     return {
         "case_id": cfg.case_id,
         "run_id": None,
@@ -60,9 +61,9 @@ def build_case_config_meta(state: CrispDMState) -> dict[str, Any]:
         "feature_hints": dict(cfg.feature_hints),
         "class_labels": dict(cfg.class_labels),
         "data_files": {
-            "train_csv": train_name,
-            "test_csv": test_name,
-            "sample_submission_csv": sample_name,
+            "train_csv": _file_name(cfg.data.train_csv),
+            "test_csv": _file_name(cfg.data.test_csv),
+            "sample_submission_csv": _file_name(cfg.data.sample_submission_csv),
         },
         "data_mining_goals": state.bu.data_mining_goals,
     }
@@ -338,14 +339,13 @@ def build_handoff_zip(
             json.dumps(notebook, indent=2),
         )
 
-        data_pairs = [
-            (Path(cfg.data.train_csv), f"{root}/data/{Path(cfg.data.train_csv).name}"),
-            (Path(cfg.data.test_csv), f"{root}/data/{Path(cfg.data.test_csv).name}"),
-            (
-                Path(cfg.data.sample_submission_csv),
-                f"{root}/data/{Path(cfg.data.sample_submission_csv).name}",
-            ),
-        ]
+        data_pairs = []
+        for path in (cfg.data.train_csv, cfg.data.test_csv, cfg.data.sample_submission_csv):
+            if path:
+                data_pairs.append((Path(path), f"{root}/data/{Path(path).name}"))
+        for src in cfg.data.sources:
+            if src.path and src.path not in {cfg.data.train_csv, cfg.data.test_csv, cfg.data.sample_submission_csv}:
+                data_pairs.append((Path(src.path), f"{root}/data/{Path(src.path).name}"))
         for src, arc in data_pairs:
             _zip_add_file(zf, src, arc)
 

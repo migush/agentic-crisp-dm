@@ -14,7 +14,7 @@ _SUBSTEP_ASSIGNMENTS: dict[str, dict[str, Any]] = {
         "requested_outputs": ["du.initial_data_collection_report"],
         "completion_criteria": [
             "Source files inventoried and readable",
-            "Train and test row counts recorded",
+            "Row counts recorded for every available table (test may be absent)",
         ],
         "constraints": ["Do not mutate raw source files"],
     },
@@ -111,11 +111,12 @@ def _inputs_for_task(
 ) -> dict[str, Any]:
     cfg = state.config
     inputs: dict[str, Any] = {
-        "source_locations": [
+        "source_locations": [p for p in [
+            *([s.path for s in cfg.data.sources] if cfg.data.sources else []),
             cfg.data.train_csv,
             cfg.data.test_csv,
             cfg.data.sample_submission_csv,
-        ],
+        ] if p],
         "config_path": None,
         "metadata_paths": [],
         "upstream_artifacts": [],

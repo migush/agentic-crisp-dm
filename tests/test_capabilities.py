@@ -88,16 +88,17 @@ def test_schema_columns_prefers_prepared_train(state):
     assert _schema_columns(state) == ["target", "text", "keyword"]
 
 
+def _tiny_text_train(path: Path) -> None:
+    texts = [f"event {i} flood fire" if i % 2 else f"ok {i} sunny day" for i in range(40)]
+    pd.DataFrame({"target": [i % 2 for i in range(40)], "text": texts}).to_parquet(path)
+
+
 def test_text_model_baseline_on_prepared_train_without_id(tmp_path):
     from maads.capabilities.data_scientist import _run_text_model_baseline
     from maads.tools import PythonExec
 
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "artifacts/disaster_tweets/runs/c4ddf126-1124-4ed5-908f-ff4da33f5e5d/train.parquet"
-    )
     train_path = tmp_path / "train.parquet"
-    pd.read_parquet(source).to_parquet(train_path)
+    _tiny_text_train(train_path)
     cols = list(pd.read_parquet(train_path).columns)
     header_vars = {
         "TRAIN_PARQUET": str(train_path),
@@ -106,6 +107,7 @@ def test_text_model_baseline_on_prepared_train_without_id(tmp_path):
         "ID_COL": "id",
         "METRIC": "f1",
         "PROBLEM_TYPE": "binary_classification",
+        "PRIMARY_TEXT_COL": "text",
     }
     pyexec = PythonExec(workdir=tmp_path / "sandbox")
     payload = _run_text_model_baseline(pyexec, header_vars)
@@ -124,10 +126,7 @@ def test_ds_43_text_fallback_when_authored_code_fails(monkeypatch, tmp_path):
     state = CrispDMState.from_config(cfg)
     state.substep = "4.3"
     train_path = tmp_path / "train.parquet"
-    pd.read_parquet(
-        "/Users/miroslavgeorgiev/work/Maestro-AI-Agentic-CRISP-DM-Orchestration/"
-        "artifacts/disaster_tweets/runs/c4ddf126-1124-4ed5-908f-ff4da33f5e5d/train.parquet"
-    ).to_parquet(train_path)
+    _tiny_text_train(train_path)
     state.dp.dataset = {"train": str(train_path)}
     state.md.modeling_technique = "tfidf_logreg"
 
@@ -156,10 +155,7 @@ def test_ds_44_text_fallback_when_authored_code_fails(monkeypatch, tmp_path):
     state = CrispDMState.from_config(cfg)
     state.substep = "4.4"
     train_path = tmp_path / "train.parquet"
-    pd.read_parquet(
-        "/Users/miroslavgeorgiev/work/Maestro-AI-Agentic-CRISP-DM-Orchestration/"
-        "artifacts/disaster_tweets/runs/c4ddf126-1124-4ed5-908f-ff4da33f5e5d/train.parquet"
-    ).to_parquet(train_path)
+    _tiny_text_train(train_path)
     state.dp.dataset = {"train": str(train_path)}
     state.md.models.append(
         ModelRun(technique="tfidf_logreg", cv_score=0.74, cv_std=0.01, description="test"),
