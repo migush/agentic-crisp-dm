@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import run_launcher
+from . import run_launcher, user_cases
 from .db import get_conn
 from .hosted import list_live_chat_models, require_hosted_provider
 from .paths import known_case_ids
@@ -55,11 +55,22 @@ def launch_task(
     model_id = body.model_id.strip()
     if not model_id:
         raise HTTPException(status_code=400, detail="model_id is required.")
-    # case_name reaches both a filesystem path and the `maads run --case`
-    # argument, so it must be one of the configs that actually exist rather
-    # than whatever the client sent.
-    if body.case_name not in known_case_ids():
-        raise HTTPException(status_code=400, detail=f"Unknown case: {body.case_name}")
+    config_path: str | None = None
+    if body.case_name in known_case_ids():
+        pass
+    else:
+        row = user_cases.get_row(user_id, body.case_name)
+        if row is None:
+            raise HTTPException(status_code=400, detail=f"Unknown case: {body.case_name}")
+        if row["status"] != "ready":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Case {body.case_name!r} is {row['status']}, not ready to launch.",
+            )
+        yaml_path = user_cases.case_yaml_path(user_id, body.case_name)
+        if not yaml_path.is_file():
+            raise HTTPException(status_code=400, detail=f"Unknown case: {body.case_name}")
+        config_path = str(yaml_path)
 
     live_ids = {entry["id"] for entry in list_live_chat_models(provider, body.decrypted_api_key)}
     if model_id not in live_ids:
@@ -74,6 +85,7 @@ def launch_task(
         provider=provider,
         model_id=model_id,
         decrypted_api_key=body.decrypted_api_key,
+        config_path=config_path,
     )
     return TaskSummary(
         id=task_id,

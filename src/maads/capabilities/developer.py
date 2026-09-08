@@ -17,11 +17,16 @@ from maads.tools import FileIO, PythonExec
 _SUBMISSION_INSTRUCTION = (
     "CRISP-DM 6.1 Build Submission: refit the chosen model approach on the full "
     "training set, generate predictions for the prepared test set, and write "
-    "OUTPUT_PATH. Load SAMPLE_SUBMISSION as the authoritative schema template — "
-    "column names, dtypes, and row count must match exactly before writing. "
+    "OUTPUT_PATH. When SAMPLE_SUBMISSION is a real file, load it as the "
+    "authoritative schema template — column names, dtypes, and row count must "
+    "match exactly before writing. When SAMPLE_SUBMISSION is empty, invent a "
+    "schema (typically ID_COL plus TARGET or a prediction column) and own that "
+    "schema. "
     "Parse CHOSEN_MODEL with load_chosen_model() (or json.loads when it is a string) "
     "in code (pipelines are not persisted from Phase 4). Respect PROBLEM_TYPE and "
     "EVAL_METRIC (e.g. log-transform the target when the metric name contains 'log'). "
+    "Classification labels may be strings or integers of any cardinality — encode "
+    "for fitting and inverse-transform for the submission when needed. "
     "When TEXT_COLUMN is non-empty, treat this as NLP-primary and use that column "
     "as the main feature (parse FEATURE_HINTS for weak categoricals if needed). "
     "Join predictions to ID_COL from the test records; never reorder or drop rows. "
@@ -40,7 +45,8 @@ from sklearn.linear_model import LogisticRegression
 train = pd.read_parquet(TRAIN_PARQUET)
 test = pd.read_parquet(TEST_PARQUET)
 X_train = drop_feature_columns(train)
-y = train[TARGET].astype(int).values
+y, class_values, label_encoder = classification_target_values(train[TARGET])
+n_classes = len(set(y.tolist()))
 X_test = drop_feature_columns(test)
 primary_text = PRIMARY_TEXT_COL if PRIMARY_TEXT_COL in X_train.columns else None
 text_cols = [
@@ -68,20 +74,30 @@ if num_cols:
         num_cols,
     ))
 pre = ColumnTransformer(transformers, remainder="drop")
-clf = LogisticRegression(max_iter=2000, solver="liblinear", class_weight="balanced", random_state=42)
+clf = LogisticRegression(max_iter=2000, solver=logistic_solver_for(n_classes), class_weight="balanced", random_state=42)
 pipe = Pipeline([("pre", pre), ("clf", clf)])
 pipe.fit(X_train, y)
-preds = pipe.predict(X_test).astype(int)
-sample = pd.read_csv(SAMPLE_SUBMISSION)
-idc = ID_COL if ID_COL in sample.columns else sample.columns[0]
-target_col = TARGET if TARGET in sample.columns else sample.columns[1]
-if ID_COL in test.columns:
-    sub = pd.DataFrame({idc: test[ID_COL].values, target_col: preds})
+encoded_preds = pipe.predict(X_test)
+if label_encoder is not None:
+    preds = label_encoder.inverse_transform(encoded_preds)
 else:
-    sub = pd.DataFrame({idc: sample[idc].values, target_col: preds})
-sub = sub.reindex(columns=list(sample.columns))
-assert list(sub.columns) == list(sample.columns)
-assert len(sub) == len(sample)
+    preds = encoded_preds
+if SAMPLE_SUBMISSION:
+    sample = pd.read_csv(SAMPLE_SUBMISSION)
+    idc = ID_COL if ID_COL in sample.columns else sample.columns[0]
+    target_col = TARGET if TARGET in sample.columns else sample.columns[1]
+    if ID_COL in test.columns:
+        sub = pd.DataFrame({idc: test[ID_COL].values, target_col: preds})
+    else:
+        sub = pd.DataFrame({idc: sample[idc].values, target_col: preds})
+    sub = sub.reindex(columns=list(sample.columns))
+    assert list(sub.columns) == list(sample.columns)
+    assert len(sub) == len(sample)
+else:
+    idc = ID_COL if ID_COL in test.columns else (test.columns[0] if len(test.columns) else "id")
+    target_col = TARGET or "prediction"
+    ids = test[idc].values if idc in test.columns else range(len(preds))
+    sub = pd.DataFrame({idc: ids, target_col: preds})
 sub.to_csv(OUTPUT_PATH, index=False)
 print(json.dumps({"submission_path": OUTPUT_PATH, "rows": int(len(sub))}))
 """

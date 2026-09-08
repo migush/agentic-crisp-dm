@@ -28,6 +28,7 @@ from .auth import assert_secret_configured
 from .db import init_db
 from .routes_auth import require_user_flexible
 from .routes_auth import router as auth_router
+from .routes_cases import router as cases_router
 from .routes_keys import router as keys_router
 from .routes_models import router as models_router
 from .routes_tasks import router as tasks_router
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(keys_router)
     app.include_router(models_router)
     app.include_router(tasks_router)
+    app.include_router(cases_router)
 
     # Mounted before the SPA fallback below, so /dashboard/* reaches the trace
     # dashboard instead of being swallowed by this app's catch-all.

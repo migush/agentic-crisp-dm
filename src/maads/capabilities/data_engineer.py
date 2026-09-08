@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import json
 
 from maads.codegen import run_authored_code
 from maads.deltas import StateDelta
@@ -19,6 +20,7 @@ from maads.capabilities.shared import (
     measure_prep_artifacts as _measure_prep_artifacts,
     target_preserved as _target_preserved,
 )
+from maads.config import primary_train_csv, source_locations
 
 _QUALITY_24_INSTRUCTION = (
     "CRISP-DM 2.4 Verify Data Quality: inspect the training data and classify "
@@ -43,21 +45,31 @@ def execution_evidence(
     expects. Each authored attempt self-debugs via codegen.run_authored_code
     (with Developer DEBUG on exhaustion); no baseline fallback.
     """
-    train = _abspath(state.config.data.train_csv)
+    train = _abspath(state.config.data.train_csv) or _abspath(primary_train_csv(state.config.data))
     test = _abspath(state.config.data.test_csv)
     target = state.config.target_column
     idc = state.config.id_column
     ds_ctx = _de_dataset_context(state, train, test)
+    sources_json = json.dumps(source_locations(state.config.data))
+    missing_note = (
+        " Missing TEST_CSV or sample submission is work for this phase, not an upload error: "
+        "inventory SOURCE_PATHS, decide file roles from evidence, and create a modelling "
+        "holdout or submission schema only when the goal requires it."
+    )
 
     if substep == "2.1":
         res = run_authored_code(
             pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 2.1 Collect Initial Data: load the train and test "
-                        "CSVs and report a brief collection summary. "
-                        "Use DATASET_INSPECT_JSON for column alignment hints.",
-            header_vars={"TRAIN_CSV": train, "TEST_CSV": test, **ds_ctx},
-            contract=lambda p: _has_keys(p, "train_rows", "test_rows", "columns"),
-            contract_hint="Required keys: train_rows (int), test_rows (int), columns (list).",
+            instruction="CRISP-DM 2.1 Collect Initial Data: load the available source "
+                        "CSVs (TRAIN_CSV, TEST_CSV when non-empty, and every path in "
+                        "SOURCE_PATHS) and report a brief collection summary. "
+                        "Use DATASET_INSPECT_JSON for column alignment hints."
+                        + missing_note,
+            header_vars={
+                "TRAIN_CSV": train, "TEST_CSV": test, "SOURCE_PATHS": sources_json, **ds_ctx,
+            },
+            contract=lambda p: _has_keys(p, "train_rows", "columns"),
+            contract_hint="Required keys: train_rows (int), columns (list). Include test_rows when a test file exists.",
             artifact_dir=artifact_dir,
         )
         return {"initial_data_collection_report": res.payload}
@@ -67,7 +79,7 @@ def execution_evidence(
             pyexec=pyexec, agent_name="data_engineer", state=state,
             instruction="CRISP-DM 2.2 Describe Data: profile the training data — "
                         "row/column counts, dtypes, missing counts, cardinality.",
-            header_vars={"TRAIN_CSV": train, **ds_ctx},
+            header_vars={"TRAIN_CSV": train, "SOURCE_PATHS": sources_json, **ds_ctx},
             contract=_describe_data_contract,
             contract_hint=(
                 "Required keys: n_rows (int), n_cols (int), columns (list of str), "
@@ -83,7 +95,7 @@ def execution_evidence(
         res = run_authored_code(
             pyexec=pyexec, agent_name="data_engineer", state=state,
             instruction=_QUALITY_24_INSTRUCTION,
-            header_vars={"TRAIN_CSV": train, "TARGET": target, **ds_ctx},
+            header_vars={"TRAIN_CSV": train, "TARGET": target, "SOURCE_PATHS": sources_json, **ds_ctx},
             contract=lambda p: _has_keys(p, "blockers", "tolerable"),
             contract_hint="Required keys: blockers (list of strings), tolerable (list of strings).",
             artifact_dir=artifact_dir,
@@ -96,10 +108,12 @@ def execution_evidence(
     if substep == "3.2":
         res = run_authored_code(
             pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 3.2 Clean Data: read TRAIN_IN and TEST_IN, apply "
-                        "leakage-safe cleaning (impute missing, fix invalid values), "
+            instruction="CRISP-DM 3.2 Clean Data: read TRAIN_IN and TEST_IN (TEST_IN may "
+                        "be empty — then decide whether to split or leave holdout for later), "
+                        "apply leakage-safe cleaning (impute missing, fix invalid values), "
                         "write train_clean.parquet and test_clean.parquet under OUTDIR, "
-                        "and report missing counts before and after.",
+                        "and report missing counts before and after. Missing test/submission/"
+                        "integer labels are work for this phase, not upload errors.",
             header_vars={
                 "TRAIN_IN": train_in, "TEST_IN": test_in, "OUTDIR": prep_wd, "TARGET": target,
                 **ds_ctx,
@@ -185,12 +199,16 @@ def execution_evidence(
 
     if substep == "3.5":
         outdir = str(artifact_dir.resolve())
-        source_train = _abspath(state.config.data.train_csv)
+        source_train = train
         res = run_authored_code(
             pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 3.5 Format Data: read TRAIN_IN and TEST_IN, drop "
-                        "identifier/leakage columns, keep TARGET in train and ID_COL in "
-                        "test, and write final train.parquet and test.parquet into OUTDIR.",
+            instruction="CRISP-DM 3.5 Format Data: read TRAIN_IN and TEST_IN (create a "
+                        "modelling holdout if only one table exists), drop identifier/"
+                        "leakage columns, keep TARGET in train when it is known, keep "
+                        "ID_COL in test when it is known, and write final train.parquet "
+                        "and test.parquet into OUTDIR. A labelled second file may be "
+                        "holdout, leakage, or something else — decide from evidence. "
+                        "Invent a submission schema only if the goal needs predictions.",
             header_vars={
                 "TRAIN_IN": train_in, "TEST_IN": test_in, "OUTDIR": outdir,
                 "SOURCE_TRAIN": source_train, "TARGET": target, "ID_COL": idc,

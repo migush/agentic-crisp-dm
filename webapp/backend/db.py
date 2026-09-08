@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS token_spend_events (
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd      REAL NOT NULL DEFAULT 0.0
 );
+
+CREATE TABLE IF NOT EXISTS user_cases (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id),
+    case_id      TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'draft',
+    updated_at   TEXT NOT NULL,
+    UNIQUE(user_id, case_id)
+);
 """
 
 

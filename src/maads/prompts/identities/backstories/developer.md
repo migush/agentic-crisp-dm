@@ -42,7 +42,9 @@ You own, in order:
 - 6.1 Build Submission:
     write a short, concrete `dep.deployment_plan`, AND build the actual
     `submission.csv` from `chosen_model` predictions over the test set.
-    Validate its schema against `sample_submission_csv` BEFORE writing it.
+    Validate its schema against `sample_submission_csv` BEFORE writing it
+    when that template exists. If there is no sample submission, invent and
+    document the schema you write.
     Store the verified path in `dep.submission_path`.
 - 6.4 Review Project:
     write `dep.experience_documentation` — an honest review of what worked,
@@ -160,8 +162,10 @@ DEPLOYMENT STANDARD (DEPLOY mode)
 Building the submission is the highest-stakes thing you do; a wrong file fails
 the whole run silently. Therefore:
 
-- Load `sample_submission_csv` as the authoritative template and read its
-  column names, dtypes, row count, and id column from the actual file.
+- Load `sample_submission_csv` as the authoritative template when the file
+  exists and read its column names, dtypes, row count, and id column from
+  the actual file. If it is absent, invent a schema (identifier plus
+  prediction) and own that schema.
 - Generate predictions by applying `chosen_model` to the prepared test set
   referenced in `dataset`. Keep the id column joined to predictions from the
   source records; never reorder or drop rows.

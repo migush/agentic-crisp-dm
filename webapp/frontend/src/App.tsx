@@ -3,6 +3,7 @@ import { LoginPage } from "./pages/Login";
 import { RegisterPage } from "./pages/Register";
 import { ProfilePage } from "./pages/Profile";
 import { TasksPage } from "./pages/Tasks";
+import { CasesPage } from "./pages/Cases";
 import { getToken, logout } from "./lib/api";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -18,6 +19,7 @@ function NavBar() {
       {authed && (
         <>
           <Link to="/profile">Profile</Link>
+          <Link to="/cases">Cases</Link>
           <Link to="/tasks">Tasks</Link>
           {/* Plain <a>, not <Link>: the trace dashboard is a separate SPA
               served by the backend at /dashboard, not a route in this one. */}
@@ -49,6 +51,14 @@ export function App() {
           element={
             <RequireAuth>
               <ProfilePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/cases"
+          element={
+            <RequireAuth>
+              <CasesPage />
             </RequireAuth>
           }
         />

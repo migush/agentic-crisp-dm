@@ -97,6 +97,77 @@ def test_launch_task_rejects_unknown_case(tmp_path, monkeypatch, case_name):
     assert resp.status_code == 400
 
 
+def test_launch_ready_user_case_uses_config_path(tmp_path, monkeypatch):
+    import webapp.backend.paths as paths_module
+    import webapp.backend.run_launcher as run_launcher
+
+    calls = []
+    monkeypatch.setattr(run_launcher, "run_task", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setattr(
+        paths_module,
+        "user_cases_root",
+        lambda uid: tmp_path / "users" / str(uid) / "cases",
+    )
+
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    created = client.post(
+        "/api/cases",
+        data={"title": "Widget labels", "problem_statement": "Predict the class of each widget."},
+        files=[("files", ("widgets.csv", b"rec_id,label\n1,a\n2,b\n", "text/csv"))],
+        headers=headers,
+    )
+    assert created.status_code == 201
+    cid = created.json()["case_id"]
+    ready = client.put(
+        f"/api/cases/{cid}",
+        json={"problem_type": "classification", "target_column": "label", "mark_ready": True},
+        headers=headers,
+    )
+    assert ready.status_code == 200
+    assert ready.json()["status"] == "ready"
+
+    resp = client.post(
+        "/api/tasks",
+        json={
+            "case_name": cid,
+            "provider": "openai",
+            "model_id": "gpt-4o",
+            "decrypted_api_key": "sk-x",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[0]["case_name"] == cid
+    assert calls[0]["config_path"]
+    assert calls[0]["config_path"].endswith("case.yaml")
+
+
+def test_launch_draft_user_case_rejected(tmp_path, monkeypatch):
+    import webapp.backend.paths as paths_module
+
+    monkeypatch.setattr(
+        paths_module,
+        "user_cases_root",
+        lambda uid: tmp_path / "users" / str(uid) / "cases",
+    )
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    created = client.post(
+        "/api/cases",
+        data={"title": "Drafty", "problem_statement": "Predict label."},
+        files=[("files", ("ok.csv", b"rec_id,label\n1,a\n", "text/csv"))],
+        headers=headers,
+    )
+    cid = created.json()["case_id"]
+    resp = client.post(
+        "/api/tasks",
+        json={"case_name": cid, "provider": "openai", "model_id": "gpt-4o", "decrypted_api_key": "sk-x"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+
+
 def test_launch_task_rejects_model_not_in_live_list(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
     headers = register(client)

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
+from maads.config import primary_train_csv, source_locations
 from maads.paths import resolve_path
 from maads.state import CrispDMState
 from maads.tools import inspect_dataset
@@ -19,7 +20,9 @@ _PREP_STAGE_FILES = (
 _PREP_UPSTREAM = {"3.2": None, "3.3": "clean", "3.4": "constructed", "3.5": "integrated"}
 
 
-def abspath(rel: str) -> str:
+def abspath(rel: str | None) -> str:
+    if not rel:
+        return ""
     return str(resolve_path(rel))
 
 
@@ -49,7 +52,9 @@ def prep_inputs(artifact_dir: Path, state: CrispDMState, substep: str = "") -> t
     at-or-before it, falling back to the raw source CSVs.
     """
     wd = prep_workdir(artifact_dir)
-    raw = (abspath(state.config.data.train_csv), abspath(state.config.data.test_csv))
+    train_raw = abspath(state.config.data.train_csv) or abspath(primary_train_csv(state.config.data))
+    test_raw = abspath(state.config.data.test_csv)
+    raw = (train_raw, test_raw)
     upstream = _PREP_UPSTREAM.get(substep, "integrated")  # default = most-advanced
     if upstream is None:
         return raw
@@ -57,8 +62,8 @@ def prep_inputs(artifact_dir: Path, state: CrispDMState, substep: str = "") -> t
     cutoff = names.index(upstream)
     for _stage, train_name, test_name in reversed(_PREP_STAGE_FILES[: cutoff + 1]):
         train_p, test_p = wd / train_name, wd / test_name
-        if train_p.exists() and test_p.exists():
-            return str(train_p.resolve()), str(test_p.resolve())
+        if train_p.exists() and (test_p.exists() or not test_raw):
+            return str(train_p.resolve()), (str(test_p.resolve()) if test_p.exists() else "")
     return raw
 
 
@@ -67,7 +72,14 @@ def record_degraded(state: CrispDMState, substep: str, agent: str, reason: str) 
 
 
 def de_dataset_context(state: CrispDMState, train: str, test: str) -> dict[str, Any]:
-    summary = inspect_dataset(train, test, target_column=state.config.target_column)
+    summary = inspect_dataset(
+        train,
+        test or None,
+        target_column=state.config.target_column or None,
+    )
+    sources = source_locations(state.config.data)
+    if sources:
+        summary["source_paths"] = sources
     fh = state.config.feature_hints or {}
     if fh.get("na_means_absent"):
         summary["na_means_absent"] = list(fh["na_means_absent"])
@@ -88,6 +100,8 @@ def target_preserved(payload: dict, target: str, path_key: str = "train_out") ->
     import pandas as pd
 
     path = payload.get(path_key)
+    if not target:
+        return []
     if not path:
         return [f"missing key '{path_key}'"]
     try:
@@ -198,9 +212,15 @@ def measure_prep_artifacts(
     import pandas as pd
 
     src_tr = pd.read_csv(source_train)
-    src_te = pd.read_csv(source_test)
+    if source_test and Path(source_test).exists():
+        src_te = pd.read_csv(source_test)
+    else:
+        src_te = pd.DataFrame()
     prep_tr = pd.read_parquet(train_parquet)
-    prep_te = pd.read_parquet(test_parquet)
+    if test_parquet and Path(test_parquet).exists():
+        prep_te = pd.read_parquet(test_parquet)
+    else:
+        prep_te = pd.DataFrame()
 
     dropped = [c for c in src_tr.columns if c not in prep_tr.columns and c not in {target}]
     if payload_dropped:

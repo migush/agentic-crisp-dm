@@ -99,6 +99,34 @@ def test_ollama_cloud_child_env_gets_key_and_cloud_host(db_path, tmp_path, monke
     assert "user-ollama-key" not in " ".join(cmd)
 
 
+def test_user_case_run_passes_config_not_case(db_path, tmp_path, monkeypatch):
+    captured: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    root = tmp_path / "u4"
+    monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: _mkdir(root))
+
+    yaml_path = tmp_path / "case.yaml"
+    yaml_path.write_text("case_id: widget_labels\n", encoding="utf-8")
+
+    make_user(db_path, 4)
+    task_id = run_launcher.create_task(4, "widget_labels", "openai", "gpt-4o")
+    run_launcher.run_task(
+        task_id, user_id=4, case_name="widget_labels", provider="openai",
+        model_id="gpt-4o", decrypted_api_key="sk-x",
+        config_path=str(yaml_path),
+    )
+
+    cmd = captured["cmd"]
+    assert "--config" in cmd
+    assert cmd[cmd.index("--config") + 1] == str(yaml_path)
+    assert "--case" not in cmd
+
+
 def test_completion_records_spend_from_the_real_run_layout(db_path, tmp_path, monkeypatch):
     root = tmp_path / "u3"
     seed_finished_run(

@@ -6,8 +6,10 @@ import {
   fetchLiveModels,
   fetchTaskSpend,
   launchTask,
+  listCases,
   listStoredKeys,
   listTasks,
+  CaseListItem,
   LiveModel,
   StoredKey,
   TaskSummary,
@@ -36,7 +38,8 @@ export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [storedKeys, setStoredKeys] = useState<StoredKey[]>([]);
   const [provider, setProvider] = useState("openai");
-  const [caseName, setCaseName] = useState("titanic");
+  const [caseName, setCaseName] = useState("");
+  const [caseOptions, setCaseOptions] = useState<CaseListItem[]>([]);
   const [passphrase, setPassphrase] = useState("");
   const [decryptedApiKey, setDecryptedApiKey] = useState<string | null>(null);
   const [models, setModels] = useState<LiveModel[]>([]);
@@ -56,6 +59,11 @@ export function TasksPage() {
 
   useEffect(() => {
     refreshTasks();
+    listCases().then((items) => {
+      const launchable = items.filter((c) => c.status === "ready");
+      setCaseOptions(launchable);
+      setCaseName((prev) => prev || launchable[0]?.case_id || "titanic");
+    });
     listStoredKeys().then((keys) => {
       setStoredKeys(keys);
       const hosted = keys.filter((k) => (HOSTED_PROVIDERS as readonly string[]).includes(k.provider));
@@ -203,11 +211,20 @@ export function TasksPage() {
                 value={caseName}
                 onChange={(e) => setCaseName(e.target.value)}
               >
-                <option value="titanic">titanic</option>
-                <option value="house_prices">house_prices</option>
-                <option value="disaster_tweets">disaster_tweets</option>
+                {caseOptions.map((c) => (
+                  <option key={`${c.kind}:${c.case_id}`} value={c.case_id}>
+                    {c.kind === "demo" ? `Demo — ${c.display_name}` : `Mine — ${c.display_name}`}
+                  </option>
+                ))}
               </select>
             </label>
+            <p className="text-xs text-slate-500">
+              Upload your own data on the{" "}
+              <Link className="text-sky-400" to="/cases">
+                Cases
+              </Link>{" "}
+              page.
+            </p>
             <label className="block text-sm">
               Model
               <select

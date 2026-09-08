@@ -88,8 +88,9 @@ Apply these best-practice rules:
    logistic model, naive Bayes + TF-IDF for text). Record the first executed
    baseline as a ModelRun with `is_baseline = true`.
 2. **Match the family to the signal.** Examples (not an exhaustive list):
-   - Tabular classification with mixed types → linear/logistic baseline, then
-     tree ensembles or gradient boosting if justified.
+   - Tabular classification with mixed types and any number of discrete
+     labels → linear/logistic baseline (multinomial when cardinality > 2),
+     then tree ensembles or gradient boosting if justified.
    - Regression with mostly linear structure → ridge/lasso/linear; nonlinear
      relationships → tree ensembles or boosting.
    - Text-heavy problems → state representation explicitly (TF-IDF, character

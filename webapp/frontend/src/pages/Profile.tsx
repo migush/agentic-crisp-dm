@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { encryptApiKey } from "../lib/crypto";
 import { listStoredKeys, StoredKey, upsertStoredKey } from "../lib/api";
 import { HelpStepper, OPENAI_KEY_HELP, OLLAMA_KEY_HELP, PASSPHRASE_HELP } from "../components/HelpStepper";
@@ -133,7 +134,11 @@ export function ProfilePage() {
       <h1 className="text-xl font-semibold">API keys</h1>
       <p className="text-sm text-slate-400">
         Store an OpenAI key, an Ollama Cloud key, or both. Each is encrypted in your browser with its own
-        passphrase.
+        passphrase.{" "}
+        <Link className="text-sky-400" to="/cases">
+          Create or manage cases
+        </Link>
+        .
       </p>
       {PROVIDERS.map((spec) => (
         <ProviderKeyForm
