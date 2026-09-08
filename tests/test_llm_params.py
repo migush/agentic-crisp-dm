@@ -64,13 +64,37 @@ def test_build_llm_sets_effort_for_astra(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("MODEL", "gpt-6-astra")
     reset_llm_caches()
     llm = build_llm("pm")
-    effort = getattr(llm, "reasoning_effort", None)
-    if effort is None and hasattr(llm, "model_dump"):
-        effort = (llm.model_dump() or {}).get("reasoning_effort")
-    # CrewAI LLM stores extra kwargs variously; fall back to resolved params.
-    if effort is None:
-        effort = resolve_agent_llm_params("pm").reasoning_effort
-    assert effort == "medium"
+    assert getattr(llm, "reasoning_effort", None) == "medium"
+    assert (getattr(llm, "additional_params", None) or {}).get("reasoning_effort") == "medium"
+
+
+def test_build_llm_puts_effort_on_wire_for_non_o1(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CrewAI only auto-forwards reasoning_effort for o1*; astra must still send it."""
+    monkeypatch.setenv("MODEL", "gpt-6-astra")
+    reset_llm_caches()
+    llm = build_llm("pm")
+    assert getattr(llm, "is_o1_model", False) is False
+    prepare = getattr(llm, "_prepare_completion_params", None)
+    assert prepare is not None, "expected OpenAICompletion._prepare_completion_params"
+    params = prepare([{"role": "user", "content": "ping"}])
+    assert params.get("reasoning_effort") == "medium"
+    assert params.get("reasoning_effort") != "none"
+
+
+def test_wire_patch_forwards_attribute_without_additional_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even if additional_params is stripped, the class patch still sends effort."""
+    from crewai import LLM
+
+    from maads.llm_params import install_crewai_reasoning_effort_wire_patch
+
+    install_crewai_reasoning_effort_wire_patch()
+    llm = LLM(model="gpt-6-astra", reasoning_effort="high")
+    llm.additional_params = {}
+    assert llm.is_o1_model is False
+    params = llm._prepare_completion_params([{"role": "user", "content": "ping"}])
+    assert params.get("reasoning_effort") == "high"
 
 
 def test_rejects_none_override_when_disallowed(monkeypatch: pytest.MonkeyPatch) -> None:
