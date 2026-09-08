@@ -254,6 +254,7 @@ def inspect_dataset(
         else:
             out["test_error"] = f"test file not found: {te_path}"
         return out
+    return out
 
 
 __all__ = ["ExecResult", "FileIO", "PythonExec", "RAGRetriever"]

@@ -28,7 +28,7 @@ def validate_phase_3_artifacts(state: "CrispDMState") -> list[str]:
     written by the Data Engineer's authored prep code at 3.5.
     """
     errors: list[str] = []
-    target = state.config.target_column
+    target = state.resolved_target()
     id_col = state.config.id_column
 
     merged = state.dp.merged_data or {}
@@ -58,10 +58,14 @@ def validate_phase_3_artifacts(state: "CrispDMState") -> list[str]:
     except Exception as exc:  # unreadable parquet is itself a deficit
         return errors + [f"could not read train parquet: {exc}"]
 
-    if target not in df.columns:
+    if not target:
+        errors.append("target_column is unset and Data Understanding did not record a target")
+    elif target not in df.columns:
         errors.append(f"target '{target}' not in prepared train parquet")
     elif bool(df[target].isna().any()):
         errors.append(f"target '{target}' has missing values after prep")
+    else:
+        state.adopt_target_if_blank(target)
 
     feature_cols = _predictor_columns(list(df.columns), target, id_col)
     if not feature_cols:

@@ -189,7 +189,7 @@ def build_submission(
     header_vars = {
         "TRAIN_PARQUET": dataset_train,
         "TEST_PARQUET": dataset_test,
-        "TARGET": state.config.target_column,
+        "TARGET": state.resolved_target(),
         "ID_COL": state.config.id_column,
         "PROBLEM_TYPE": state.config.problem_type,
         "EVAL_METRIC": state.config.evaluation_metric,

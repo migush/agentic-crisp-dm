@@ -340,6 +340,27 @@ class CrispDMState(BaseModel):
         if flag and flag not in self.degraded_flags:
             self.degraded_flags.append(flag)
 
+    def resolved_target(self) -> str:
+        """Configured target, or the one Data Understanding recorded when the user left it blank."""
+        configured = (self.config.target_column or "").strip()
+        if configured:
+            return configured
+        report = self.du.data_exploration_report or {}
+        inferred = report.get("target")
+        if isinstance(inferred, str) and inferred.strip():
+            return inferred.strip()
+        return ""
+
+    def adopt_target_if_blank(self, candidate: str | None) -> bool:
+        """Persist an evidence-backed target into config when the user omitted one."""
+        if (self.config.target_column or "").strip():
+            return False
+        name = (candidate or "").strip()
+        if not name:
+            return False
+        self.config = self.config.model_copy(update={"target_column": name})
+        return True
+
     # ── Prerequisite checks the orchestrator uses ─────────────────────────
 
     def substep_prereqs_satisfied(self, substep: str) -> bool:

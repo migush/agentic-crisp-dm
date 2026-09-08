@@ -13,6 +13,7 @@ from maads.capabilities.data_engineer import execution_evidence
 from maads.capabilities.data_scientist import (
     _train_schema_context,
     _text_modeling_hint,
+    apply_response as ds_apply_response,
     execution_evidence as ds_execution_evidence,
 )
 from maads.state import CrispDMState
@@ -27,7 +28,7 @@ from maads.capabilities.shared import (
 from maads.config import load_case_config
 from maads.paths import resolve_path
 from maads.state import CrispDMState
-from maads.tools import PythonExec
+from maads.tools import PythonExec, inspect_dataset
 from tests.fixtures.titanic_exec import fake_run_text_task
 
 
@@ -39,6 +40,36 @@ def state() -> CrispDMState:
 def test_has_keys_contract():
     assert has_keys({"a": 1}, "a") == []
     assert has_keys({}, "a") == ["missing key 'a'"]
+
+
+def test_inspect_dataset_train_only_with_sources(tmp_path):
+    from maads.config import CaseConfig, DataPaths, DataSource, SuccessCriterion
+
+    train = tmp_path / "obs.csv"
+    train.write_text("id,note,label\n1,hello,a\n2,world,b\n", encoding="utf-8")
+    extra = tmp_path / "notes.md"
+    extra.write_text("problem notes", encoding="utf-8")
+    out = inspect_dataset(train, None)
+    assert out["train_rows"] == 2
+    assert out["train_columns"] == ["id", "note", "label"]
+
+    cfg = CaseConfig(
+        case_id="obs_case",
+        problem_statement="Predict label from a short note.",
+        problem_type="classification",
+        data=DataPaths(
+            train_csv=str(train),
+            sources=[
+                DataSource(path=str(train), original_filename="obs.csv"),
+                DataSource(path=str(extra), original_filename="notes.md"),
+            ],
+        ),
+        success_criterion=SuccessCriterion(metric="accuracy", threshold=0.0, direction="maximize"),
+    )
+    ctx = de_dataset_context(CrispDMState.from_config(cfg), str(train), "")
+    summary = json.loads(ctx["DATASET_INSPECT_JSON"])
+    assert summary["train_rows"] == 2
+    assert len(summary["source_paths"]) == 2
 
 
 def test_execution_evidence_collect_requires_authored_code(monkeypatch, state, tmp_path):
@@ -54,6 +85,20 @@ def test_execution_evidence_collect_with_stub_code(monkeypatch, state, tmp_path)
     pyexec = PythonExec(workdir=tmp_path / "sandbox")
     out = execution_evidence(pyexec, state, "2.1", tmp_path)
     assert "initial_data_collection_report" in out
+
+
+def test_ds_23_adopts_blank_target_from_exploration(state):
+    state.config = state.config.model_copy(update={"target_column": ""})
+    delta = ds_apply_response(
+        {},
+        state,
+        "2.3",
+        {"data_exploration_report": {"n_rows": 10, "target": "Sentiment"}},
+    )
+    assert not delta.failed
+    assert "config.target_column" in delta.fields_written
+    assert state.config.target_column == "Sentiment"
+    assert state.resolved_target() == "Sentiment"
 
 
 def test_ds_execution_evidence_explore_with_stub_code(monkeypatch, state, tmp_path):

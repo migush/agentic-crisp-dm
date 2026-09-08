@@ -75,7 +75,7 @@ def de_dataset_context(state: CrispDMState, train: str, test: str) -> dict[str, 
     summary = inspect_dataset(
         train,
         test or None,
-        target_column=state.config.target_column or None,
+        target_column=state.resolved_target() or None,
     )
     sources = source_locations(state.config.data)
     if sources:
