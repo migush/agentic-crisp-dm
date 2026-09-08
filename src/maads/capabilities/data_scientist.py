@@ -16,6 +16,7 @@ from maads.capabilities.shared import (
 )
 from maads.state import CrispDMState, EvaluationBundle, ModelRun, coerce_evaluation_bundle
 from maads.success_criterion import normalize_assessment
+from maads.tools import inspect_dataset
 
 
 def _train_schema_context(dataset_train: str, id_col: str) -> tuple[list[str], str]:
@@ -360,6 +361,13 @@ def execution_evidence(
     target = state.resolved_target()
 
     if substep == "2.3":
+        summary = inspect_dataset(
+            train,
+            None,
+            target_column=state.resolved_target() or None,
+        )
+        if summary.get("error"):
+            raise RuntimeError(f"dataset inspect failed: {summary['error']}")
         res = run_authored_code(
             pyexec=pyexec, agent_name="data_scientist", state=state,
             instruction="CRISP-DM 2.3 Explore Data: probe the training data to inform "

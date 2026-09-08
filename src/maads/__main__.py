@@ -64,6 +64,12 @@ def _persist_run_outcome(
         )
     except Exception as exc:
         print(f"WARNING: report generation failed: {exc}", file=sys.stderr)
+    try:
+        from maads.experience_ledger import append_llm_param_experience
+
+        append_llm_param_experience(state, artifact_dir, case_dir)
+    except Exception as exc:
+        print(f"WARNING: LLM param experience ledger failed: {exc}", file=sys.stderr)
     return state_path, paths
 
 
@@ -229,6 +235,25 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     config = load_case_config(config_path)
+
+    from maads.preflight import preflight_case
+
+    case_errors = preflight_case(config)
+    if case_errors:
+        print("ERROR: case preflight failed:", file=sys.stderr)
+        for err in case_errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
+
+    from maads.llm_params import preflight_llm_params
+
+    llm_errors = preflight_llm_params()
+    if llm_errors:
+        print("ERROR: LLM parameter preflight failed:", file=sys.stderr)
+        for err in llm_errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
+
     state = CrispDMState.from_config(config)
 
     case_dir = case_root(resolve_path(args.artifact_dir), config.case_id)

@@ -26,6 +26,8 @@ Operators who install a bundled demo under `configs/` and `data/` should still p
 3. `sample_submission.csv` — the exact schema and row order required for predictions.
 4. `configs/<case_id>.yaml` — problem description, column roles, metric, and file locations.
 
+**Case-id path alignment:** the same `case_id` string must name both demo inputs and artifact outputs. Put CSVs at `data/<case_id>/…` exactly as referenced in the YAML (underscores, not hyphens — e.g. `disaster_tweets`, never `disaster-tweets`). Hosted runs write under `data/users/<id>/artifacts/<case_id>/` using that same id. MAADS preflight fails closed (zero LLM tokens) when train is missing or the `data/<segment>/` folder does not match `case_id`; it does not invent aliases or symlinks.
+
 This contract is based on the three demonstration cases: Titanic, House Prices, and Disaster Tweets.
 
 ## 1. What the demonstration cases have in common

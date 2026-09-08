@@ -76,6 +76,20 @@ def launch_task(
     if model_id not in live_ids:
         raise HTTPException(status_code=400, detail="model_id is not available for this API key.")
 
+    from pathlib import Path
+
+    from maads.config import load_case_config
+    from maads.paths import resolve_path
+    from maads.preflight import preflight_case
+
+    if config_path:
+        cfg = load_case_config(Path(config_path))
+    else:
+        cfg = load_case_config(resolve_path(f"configs/{body.case_name}.yaml"))
+    preflight_errors = preflight_case(cfg)
+    if preflight_errors:
+        raise HTTPException(status_code=400, detail="; ".join(preflight_errors))
+
     task_id = run_launcher.create_task(user_id, body.case_name, provider, model_id)
     background_tasks.add_task(
         run_launcher.run_task,
