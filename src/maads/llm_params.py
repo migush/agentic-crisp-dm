@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 AGENT_NAMES = (
     "pm",
@@ -30,13 +31,27 @@ _GENERIC_REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _crewai_wire_patch_installed = False
 
 
-def install_crewai_reasoning_effort_wire_patch() -> None:
-    """Make CrewAI always put ``reasoning_effort`` on chat-completion requests.
+def _resolved_effort(llm: Any) -> str | None:
+    effort = getattr(llm, "reasoning_effort", None)
+    if effort and effort != "none":
+        return str(effort)
+    extra = getattr(llm, "additional_params", None) or {}
+    effort = extra.get("reasoning_effort")
+    if effort and effort != "none":
+        return str(effort)
+    return None
 
-    CrewAI's ``OpenAICompletion._prepare_completion_params`` only forwards
-    ``reasoning_effort`` when ``is_o1_model`` (``"o1" in model``). Models such
-    as ``gpt-6-astra`` need an explicit effort; omitting it makes the API
-    default to ``none``, which astra rejects with HTTP 400.
+
+def install_crewai_reasoning_effort_wire_patch() -> None:
+    """Normalize ``reasoning_effort`` for CrewAI OpenAI Completions *and* Responses.
+
+    Completions: CrewAI only forwards ``reasoning_effort`` when ``is_o1_model``
+    (``"o1" in model``). Omitting it for ``gpt-6-astra`` makes the API default
+    to ``none`` → HTTP 400.
+
+    Responses: effort must be ``reasoning={"effort": ...}``. A top-level
+    ``reasoning_effort`` kwarg (e.g. leaked via ``additional_params``) makes
+    ``Responses.create()`` raise ``unexpected keyword argument``.
 
     Idempotent. Safe no-op if the CrewAI layout is older/missing.
     """
@@ -48,26 +63,47 @@ def install_crewai_reasoning_effort_wire_patch() -> None:
     except ImportError:
         return
 
-    if getattr(OpenAICompletion, "_maads_reasoning_effort_patch", False):
+    if getattr(OpenAICompletion, "_maads_reasoning_effort_patch_v2", False):
         _crewai_wire_patch_installed = True
         return
 
-    original = OpenAICompletion._prepare_completion_params
+    original_completions = OpenAICompletion._prepare_completion_params
+    original_responses = OpenAICompletion._prepare_responses_params
 
     def _prepare_completion_params(self, messages, tools=None):  # type: ignore[no-untyped-def]
-        params = original(self, messages, tools)
-        effort = getattr(self, "reasoning_effort", None)
-        if not effort or effort == "none":
-            extra = getattr(self, "additional_params", None) or {}
-            effort = extra.get("reasoning_effort")
-        if effort and effort != "none":
+        params = original_completions(self, messages, tools)
+        effort = _resolved_effort(self)
+        if effort:
             params["reasoning_effort"] = effort
         elif params.get("reasoning_effort") == "none":
             params.pop("reasoning_effort", None)
         return params
 
+    def _prepare_responses_params(  # type: ignore[no-untyped-def]
+        self, messages, tools=None, response_model=None
+    ):
+        params = original_responses(
+            self, messages, tools=tools, response_model=response_model
+        )
+        # Responses API rejects top-level reasoning_effort=.
+        params.pop("reasoning_effort", None)
+        effort = _resolved_effort(self)
+        if effort:
+            reasoning = params.get("reasoning")
+            if isinstance(reasoning, dict):
+                reasoning = {**reasoning, "effort": effort}
+            else:
+                reasoning = {"effort": effort}
+            params["reasoning"] = reasoning
+        else:
+            reasoning = params.get("reasoning")
+            if isinstance(reasoning, dict) and reasoning.get("effort") == "none":
+                params.pop("reasoning", None)
+        return params
+
     OpenAICompletion._prepare_completion_params = _prepare_completion_params  # type: ignore[method-assign]
-    OpenAICompletion._maads_reasoning_effort_patch = True
+    OpenAICompletion._prepare_responses_params = _prepare_responses_params  # type: ignore[method-assign]
+    OpenAICompletion._maads_reasoning_effort_patch_v2 = True
     _crewai_wire_patch_installed = True
 
 
