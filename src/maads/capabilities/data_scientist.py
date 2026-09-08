@@ -357,7 +357,7 @@ def execution_evidence(
 ) -> dict[str, Any]:
     """Author and run code for DS-owned execution substeps (no baseline fallback)."""
     train = _abspath(state.config.data.train_csv)
-    target = state.config.target_column
+    target = state.resolved_target()
 
     if substep == "2.3":
         res = run_authored_code(
@@ -538,9 +538,12 @@ def apply_response(
         report = execution_or_llm(execution, du, "data_exploration_report")
         if not report:
             desc = state.du.data_description_report or {}
-            report = {"n_rows": desc.get("n_rows"), "target": state.config.target_column}
+            report = {"n_rows": desc.get("n_rows"), "target": state.resolved_target()}
         state.du.data_exploration_report = report
         fields.append("du.data_exploration_report")
+        inferred = (report or {}).get("target") if isinstance(report, dict) else None
+        if state.adopt_target_if_blank(inferred if isinstance(inferred, str) else None):
+            fields.append("config.target_column")
     elif substep == "4.1":
         state.md.modeling_technique = md.get("modeling_technique") or "to be chosen at 4.3"
         state.md.modeling_assumptions = md.get("modeling_assumptions") or [

@@ -71,6 +71,29 @@ def test_phase3_missing_derived_feature(tmp_path: Path, state: CrispDMState):
     assert any("FamilySize" in e for e in errors)
 
 
+def test_phase3_blank_config_target_uses_exploration_report(tmp_path: Path, state: CrispDMState):
+    train = tmp_path / "train.parquet"
+    _write_parquet(
+        train,
+        pd.DataFrame({"Sentiment": ["pos", "neg"], "OriginalTweet": ["a", "b"]}),
+    )
+    state.config = state.config.model_copy(update={"target_column": ""})
+    state.du.data_exploration_report = {"n_rows": 2, "target": "Sentiment"}
+    state.dp.dataset = {"train": str(train), "test": str(train)}
+    assert validate_phase_3_artifacts(state) == []
+    assert state.config.target_column == "Sentiment"
+
+
+def test_phase3_blank_target_without_inference_is_explicit(tmp_path: Path, state: CrispDMState):
+    train = tmp_path / "train.parquet"
+    _write_parquet(train, pd.DataFrame({"Sentiment": ["pos", "neg"], "note": ["a", "b"]}))
+    state.config = state.config.model_copy(update={"target_column": ""})
+    state.dp.dataset = {"train": str(train), "test": str(train)}
+    errors = validate_phase_3_artifacts(state)
+    assert any("target_column is unset" in e for e in errors)
+    assert not any("target '' not in" in e for e in errors)
+
+
 def test_phase3_target_nan(tmp_path: Path, state: CrispDMState):
     train = tmp_path / "train.parquet"
     _write_parquet(train, pd.DataFrame({"Survived": [0, None], "Age": [22, 38]}))

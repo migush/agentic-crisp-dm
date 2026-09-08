@@ -47,7 +47,7 @@ def execution_evidence(
     """
     train = _abspath(state.config.data.train_csv) or _abspath(primary_train_csv(state.config.data))
     test = _abspath(state.config.data.test_csv)
-    target = state.config.target_column
+    target = state.resolved_target()
     idc = state.config.id_column
     ds_ctx = _de_dataset_context(state, train, test)
     sources_json = json.dumps(source_locations(state.config.data))
