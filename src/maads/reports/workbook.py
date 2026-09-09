@@ -508,6 +508,12 @@ def _continuation_markdown(state: CrispDMState) -> str:
             "- Inspect confusion-matrix errors by segment.",
             "- Try calibration and alternative classifiers or text representations.",
         ]
+    elif "classif" in problem:
+        specific = [
+            "- Review class balance and per-class errors (confusion matrix / F1).",
+            "- Inspect mistakes by segment or label.",
+            "- Try calibration and alternative classifiers or text representations.",
+        ]
     else:
         specific = [
             f"- Extend modeling for problem type `{problem}`.",
@@ -566,12 +572,42 @@ _TECHNIQUE_ALIASES: dict[str, str] = {
     "rf": "random_forest",
     "svc": "svm",
     "hist_gb": "hist_gradient_boosting",
+    "tfidf": "tfidf_logreg",
+    "tfidf_logistic": "tfidf_logreg",
+    "openai_embeddings_logreg": "tfidf_logreg",
 }
+
+_TEXT_TECHNIQUES = frozenset({"tfidf_logreg", "openai_embeddings_logreg"})
 
 
 def _normalize_technique(name: str) -> str:
     normalized = name.lower().strip().replace("-", "_").replace(" ", "_")
     return _TECHNIQUE_ALIASES.get(normalized, normalized)
+
+
+def _is_text_technique(name: str) -> bool:
+    tech = _normalize_technique(name)
+    return tech in _TEXT_TECHNIQUES or tech.startswith("tfidf")
+
+
+def _hints_want_text(feature_hints: dict[str, Any] | None) -> bool:
+    hints = feature_hints or {}
+    options = hints.get("representation_options") or []
+    if any("tfidf" in str(x).lower() or "embed" in str(x).lower() for x in options):
+        return True
+    text_free = list(hints.get("text_free") or hints.get("text") or [])
+    if not text_free:
+        return False
+    tabular_keys = ("categorical", "numeric_with_missing", "ordinal", "ordinal_string_encoded")
+    return not any(hints.get(k) for k in tabular_keys)
+
+
+def _default_template_technique(state: CrispDMState, technique: str) -> str:
+    if state.config.problem_type == "regression":
+        return "ridge"
+    if _is_text_technique(technique) or _hints_want_text(state.config.feature_hints):
+        return "tfidf_logreg"
+    return "logistic_regression"
 
 
 def _canonical_pipeline_markdown(state: CrispDMState, *, from_agent_script: bool) -> str:
@@ -646,7 +682,8 @@ if use_log_target:
     y_pred = np.expm1(y_pred)
     y_pred = np.maximum(y_pred, 0)
 '''
-    elif problem == "binary_classification":
+    else:
+        # binary_classification, classification, multiclass — hosted cases use "classification"
         estimator_block = '''\
 from sklearn.ensemble import (
     GradientBoostingClassifier,
@@ -657,24 +694,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 
 _ESTIMATORS = {
-    "logistic_regression": LogisticRegression(max_iter=1000, random_state=42),
+    "logistic_regression": LogisticRegression(max_iter=2000, random_state=42),
     "random_forest": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
     "gradient_boosting": GradientBoostingClassifier(random_state=42),
     "hist_gradient_boosting": HistGradientBoostingClassifier(random_state=42),
     "svm": SVC(probability=True, random_state=42),
 }
 ''' + optional_boosters
-        predict_fn = '''\
-y_pred = pipeline.predict(X_test)
-'''
-    else:
-        estimator_block = '''\
-from sklearn.ensemble import RandomForestClassifier
-
-_ESTIMATORS = {
-    "random_forest": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
-}
-'''
         predict_fn = '''\
 y_pred = pipeline.predict(X_test)
 '''
@@ -690,7 +716,7 @@ def _canonical_pipeline_template_code(state: CrispDMState) -> str:
     technique = _normalize_technique(raw_technique)
     problem = state.config.problem_type
     estimator_block, predict_fn = _template_estimator_block(problem)
-    default = "ridge" if problem == "regression" else "logistic_regression"
+    default = _default_template_technique(state, technique)
     note = (
         "# NOTE: no 4.3 sandbox script captured; template may not match agent choice\n"
         if raw_technique != "unspecified"
@@ -702,33 +728,64 @@ def _canonical_pipeline_template_code(state: CrispDMState) -> str:
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 {estimator_block}
+_TEXT_TECHNIQUES = {{"tfidf_logreg", "openai_embeddings_logreg"}}
 TECHNIQUE = {technique!r}
 _DEFAULT_TECHNIQUE = {default!r}
 MODEL_PATH = NOTEBOOK_OUT / "model.joblib"
 SUBMISSION_OUT = NOTEBOOK_OUT / "submission.csv"
 
+def _read_csv_any(path):
+    last = None
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except UnicodeDecodeError as exc:
+            last = exc
+    if last is not None:
+        return pd.read_csv(path, encoding="latin-1")
+    return pd.read_csv(path)
+
+def _load_frame(parquet_path, csv_path):
+    if parquet_path.is_file():
+        return pd.read_parquet(parquet_path)
+    return _read_csv_any(csv_path)
+
+def _uses_text(technique, columns):
+    text_cols = [c for c in (FEATURE_HINTS.get("text_free") or FEATURE_HINTS.get("text") or []) if c in columns]
+    if technique in _TEXT_TECHNIQUES or str(technique).startswith("tfidf"):
+        return True
+    options = FEATURE_HINTS.get("representation_options") or []
+    if technique not in _ESTIMATORS and text_cols and options:
+        return True
+    return False
+
 def build_pipeline(technique: str):
-    if technique not in _ESTIMATORS:
+    train_df = _load_frame(TRAIN_PARQUET, DATA_TRAIN_CSV)
+    test_df = _load_frame(TEST_PARQUET, DATA_TEST_CSV)
+    is_text = _uses_text(technique, train_df.columns)
+    if technique not in _ESTIMATORS and not is_text:
         print(
             f"WARNING: {{technique!r}} not in template registry; "
             f"using {{_DEFAULT_TECHNIQUE!r}}"
         )
         technique = _DEFAULT_TECHNIQUE
-    estimator = _ESTIMATORS[technique]
-
-    train_df = pd.read_parquet(TRAIN_PARQUET)
-    test_df = pd.read_parquet(TEST_PARQUET)
+        is_text = _uses_text(technique, train_df.columns)
+    if not is_text and technique not in _ESTIMATORS:
+        technique = next(iter(_ESTIMATORS))
 
     drop_cols = {{TARGET}}
     if ID_COL in train_df.columns:
         drop_cols.add(ID_COL)
-    text_cols = set(FEATURE_HINTS.get("text_free") or [])
-    drop_cols |= text_cols
+    text_cols = [c for c in (FEATURE_HINTS.get("text_free") or FEATURE_HINTS.get("text") or []) if c in train_df.columns]
+    if not is_text:
+        drop_cols |= set(text_cols)
 
     X_train = train_df.drop(columns=[c for c in drop_cols if c in train_df.columns])
     y_train = train_df[TARGET]
@@ -739,27 +796,61 @@ def build_pipeline(technique: str):
     X_test = test_df.drop(columns=[c for c in drop_cols if c in test_df.columns])
     X_test = X_test.reindex(columns=X_train.columns, fill_value=np.nan)
 
-    numeric_features = X_train.select_dtypes(include=["number"]).columns.tolist()
-    categorical_features = X_train.select_dtypes(include=["object", "category"]).columns.tolist()
-
-    numeric_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler()),
-    ])
-    categorical_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
-        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-    ])
-    preprocessor = ColumnTransformer(transformers=[
-        ("num", numeric_transformer, numeric_features),
-        ("cat", categorical_transformer, categorical_features),
-    ])
-    pipeline = Pipeline(steps=[
-        ("preprocessor", preprocessor),
-        ("model", estimator),
-    ])
+    if is_text:
+        primary = next((c for c in text_cols if c in X_train.columns), None)
+        if primary is None:
+            obj_cols = X_train.select_dtypes(include=["object", "category", "string"]).columns.tolist()
+            primary = obj_cols[0] if obj_cols else None
+        if primary is None:
+            raise RuntimeError("no text column available for tfidf_logreg")
+        n_classes = int(pd.Series(y_train).nunique()) if PROBLEM_TYPE != "regression" else 0
+        if PROBLEM_TYPE == "regression":
+            estimator = Ridge(alpha=1.0)
+        else:
+            solver = "liblinear" if n_classes <= 2 else "lbfgs"
+            estimator = LogisticRegression(
+                max_iter=2000, solver=solver, class_weight="balanced", random_state=42,
+            )
+        pipeline = Pipeline(steps=[
+            ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=50000, min_df=2)),
+            ("model", estimator),
+        ])
+        X_train = X_train[primary].astype(str).fillna("")
+        X_test = X_test[primary].astype(str).fillna("")
+    else:
+        estimator = _ESTIMATORS[technique]
+        numeric_features = X_train.select_dtypes(include=["number"]).columns.tolist()
+        categorical_features = X_train.select_dtypes(
+            include=["object", "category", "string"]
+        ).columns.tolist()
+        transformers = []
+        if numeric_features:
+            transformers.append((
+                "num",
+                Pipeline(steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    ("scaler", StandardScaler()),
+                ]),
+                numeric_features,
+            ))
+        if categorical_features:
+            transformers.append((
+                "cat",
+                Pipeline(steps=[
+                    ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+                ]),
+                categorical_features,
+            ))
+        if not transformers:
+            raise RuntimeError("no feature columns for tabular template")
+        preprocessor = ColumnTransformer(transformers)
+        pipeline = Pipeline(steps=[
+            ("preprocessor", preprocessor),
+            ("model", estimator),
+        ])
     pipeline.fit(X_train, y_train)
-    if ID_COL in test_df.columns:
+    if ID_COL and ID_COL in test_df.columns:
         test_ids = test_df[ID_COL].values
     else:
         test_ids = np.arange(len(X_test))
@@ -770,9 +861,14 @@ joblib.dump({{"pipeline": pipeline, "technique": TECHNIQUE, "use_log_target": us
 print(f"Saved {{MODEL_PATH}}")
 
 {predict_fn}
-sample = pd.read_csv(SAMPLE_SUBMISSION)
-id_col = ID_COL if ID_COL in sample.columns else sample.columns[0]
-target_col = [c for c in sample.columns if c != id_col][0]
+if SAMPLE_SUBMISSION.is_file():
+    sample = _read_csv_any(SAMPLE_SUBMISSION)
+    id_col = ID_COL if ID_COL and ID_COL in sample.columns else sample.columns[0]
+    rest = [c for c in sample.columns if c != id_col]
+    target_col = rest[0] if rest else TARGET
+else:
+    id_col = ID_COL or "id"
+    target_col = TARGET
 out = pd.DataFrame({{id_col: test_ids, target_col: y_pred}})
 out.to_csv(SUBMISSION_OUT, index=False)
 print(f"Wrote {{SUBMISSION_OUT}} ({{len(out)}} rows)")

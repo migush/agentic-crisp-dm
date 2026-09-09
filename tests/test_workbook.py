@@ -10,6 +10,7 @@ from maads.artifact_paths import RunPaths, ensure_run_layout
 from maads.config import load_case_config
 from maads.paths import resolve_path, repo_root
 from maads.reports.workbook import (
+    _canonical_pipeline_template_code,
     build_workbook_context,
     render_workbook_ipynb,
     write_case_workbook,
@@ -295,3 +296,95 @@ def test_path_rewrite_integration(tmp_path: Path):
     assert "REPO_ROOT" in setup
     assert "PosixPath" not in setup
     assert "DATA_TRAIN_CSV = REPO_ROOT / " in setup
+
+
+def test_classification_template_registers_logistic_regression(tmp_path: Path):
+    run_dir = tmp_path / "runs" / "cls-logreg"
+    ensure_run_layout(run_dir, run_id="cls-logreg", case_id="titanic")
+    state = _minimal_state("configs/titanic.yaml", run_dir)
+    state.config.problem_type = "classification"
+    state.md.chosen_model.technique = "unknown_model"
+    code = _canonical_pipeline_template_code(state)
+    assert "logistic_regression" in code
+    assert "_DEFAULT_TECHNIQUE = 'logistic_regression'" in code
+    assert '"logistic_regression":' in code or "'logistic_regression':" in code
+
+
+def test_tfidf_template_keeps_text_column(tmp_path: Path):
+    run_dir = tmp_path / "runs" / "tfidf-nb"
+    ensure_run_layout(run_dir, run_id="tfidf-nb", case_id="disaster_tweets")
+    state = _minimal_state("configs/disaster_tweets.yaml", run_dir)
+    state.md.chosen_model.technique = "tfidf_logreg"
+    code = _canonical_pipeline_template_code(state)
+    assert "TfidfVectorizer" in code
+    assert "TECHNIQUE = 'tfidf_logreg'" in code
+    assert "_DEFAULT_TECHNIQUE = 'tfidf_logreg'" in code
+    assert "if not is_text:" in code
+    assert "SAMPLE_SUBMISSION.is_file()" in code
+
+
+def test_generated_nlp_template_fits_without_sample_submission(tmp_path: Path):
+    """Hosted covid-style: classification + tfidf_logreg + blank sample_submission."""
+    import pandas as pd
+
+    run_dir = tmp_path / "runs" / "covid-like"
+    ensure_run_layout(run_dir, run_id="covid-like", case_id="titanic")
+    state = _minimal_state("configs/titanic.yaml", run_dir)
+    state.config.problem_type = "classification"
+    state.config.target_column = "Sentiment"
+    state.config.id_column = "id"
+    state.config.feature_hints = {
+        "text_free": ["text"],
+        "representation_options": ["tfidf_logreg"],
+    }
+    state.config.data.sample_submission_csv = None
+    state.md.chosen_model.technique = "tfidf_logreg"
+
+    out = tmp_path / "notebook_outputs"
+    out.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    train = pd.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6],
+        "text": [
+            "positive happy news today happy news",
+            "positive happy news today happy news",
+            "negative sad news today sad news",
+            "negative sad news today sad news",
+            "neutral update today news update",
+            "neutral update today news update",
+        ],
+        "Sentiment": ["Positive", "Positive", "Negative", "Negative", "Neutral", "Neutral"],
+    })
+    test = pd.DataFrame({
+        "id": [10, 11],
+        "text": [
+            "positive happy news today happy news",
+            "negative sad news today sad news",
+        ],
+    })
+    train_pq = tmp_path / "train.parquet"
+    test_pq = tmp_path / "test.parquet"
+    train.to_parquet(train_pq)
+    test.to_parquet(test_pq)
+
+    ns: dict = {
+        "NOTEBOOK_OUT": out,
+        "TRAIN_PARQUET": train_pq,
+        "TEST_PARQUET": test_pq,
+        "DATA_TRAIN_CSV": data_dir / "train.csv",
+        "DATA_TEST_CSV": data_dir / "test.csv",
+        "SAMPLE_SUBMISSION": data_dir,
+        "TARGET": "Sentiment",
+        "ID_COL": "id",
+        "PROBLEM_TYPE": "classification",
+        "EVAL_METRIC": "accuracy",
+        "FEATURE_HINTS": state.config.feature_hints,
+    }
+    exec(_canonical_pipeline_template_code(state), ns)
+    sub = out / "submission.csv"
+    assert (out / "model.joblib").is_file()
+    assert sub.is_file()
+    written = pd.read_csv(sub)
+    assert list(written.columns) == ["id", "Sentiment"]
+    assert len(written) == 2
