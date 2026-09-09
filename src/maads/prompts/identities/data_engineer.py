@@ -31,10 +31,10 @@ _SUBSTEP_ASSIGNMENTS: dict[str, dict[str, Any]] = {
         "requested_outputs": ["du.data_quality_report"],
         "completion_criteria": [
             "Blockers and tolerable issues classified with evidence",
-            "na_means_absent columns treated as structural absence, not blockers",
+            "na_means_absent and high_missing columns treated as documented absence, not blockers",
         ],
         "constraints": [
-            "Parse na_means_absent from DATASET_INSPECT_JSON; high NA on those columns is tolerable",
+            "Parse na_means_absent and high_missing from DATASET_INSPECT_JSON / feature_hints; high NA on those columns is tolerable",
             "Reserve blockers for missing target, constants, undocumented corruption",
         ],
     },
