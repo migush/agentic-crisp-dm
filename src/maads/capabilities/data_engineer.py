@@ -15,6 +15,7 @@ from maads.capabilities.shared import (
 )
 from maads.config import primary_train_csv, source_locations
 from maads.deltas import StateDelta
+from maads.schema_inference import apply_inferred_schema
 from maads.state import CrispDMState
 from maads.tools import PythonExec
 
@@ -31,6 +32,7 @@ def execution_evidence(
     DU/DP paths do not author freeform Python.
     """
     del pyexec  # unused on the deterministic path
+    schema_fields = apply_inferred_schema(state)
     train = _abspath(state.config.data.train_csv) or _abspath(primary_train_csv(state.config.data))
     test = _abspath(state.config.data.test_csv)
     target = state.resolved_target()
@@ -47,6 +49,7 @@ def execution_evidence(
             "initial_data_collection_report": ml_tools.collect_report(
                 train, test, source_paths=sources or None,
             ),
+            "schema_fields": schema_fields,
         }
 
     if substep == "2.2":
@@ -54,7 +57,11 @@ def execution_evidence(
             train, test or None, target=target or None, id_column=idc or None,
             na_means_absent=na_absent, high_missing=high_missing,
         )
-        return {"data_description_report": ml_tools.describe_report_from_profile(profile)}
+        schema_fields = list(dict.fromkeys([*schema_fields, *apply_inferred_schema(state, profile=profile)]))
+        return {
+            "data_description_report": ml_tools.describe_report_from_profile(profile),
+            "schema_fields": schema_fields,
+        }
 
     if substep == "2.4":
         profile = ml_tools.profile_dataset(
@@ -114,6 +121,17 @@ def execution_evidence(
         }
 
     if substep == "3.5":
+        if not state.resolved_target() and train_in:
+            last_profile = ml_tools.profile_dataset(
+                train_in, test_in or None,
+                target=None, id_column=idc or None,
+            )
+            schema_fields = list(dict.fromkeys([
+                *schema_fields, *apply_inferred_schema(state, profile=last_profile),
+            ]))
+        target = state.resolved_target()
+        idc = state.config.id_column
+        hints = state.config.feature_hints or {}
         outdir = str(artifact_dir.resolve())
         info = ml_tools.format_tables(
             train_in, test_in, outdir,
@@ -144,6 +162,7 @@ def execution_evidence(
             ),
             "derived": info.get("derived") or [],
             "dropped": info.get("dropped") or [],
+            "schema_fields": schema_fields,
             **measured,
         }
     return {}
@@ -187,7 +206,7 @@ def apply_response(
     su = (data or {}).get("state_updates") or {}
     du = su.get("du") or {}
     dp = su.get("dp") or {}
-    fields: list[str] = []
+    fields: list[str] = list(execution.get("schema_fields") or [])
 
     if substep == "2.1":
         report = execution_or_llm(execution, du, "initial_data_collection_report")

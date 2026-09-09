@@ -8,6 +8,7 @@ import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from maads.paths import resolve_path
+from maads.schema_inference import infer_source_paths, reconcile_data_paths
 
 
 class DataSource(BaseModel):
@@ -55,10 +56,13 @@ def primary_train_csv(data: DataPaths) -> str:
     """Path to the primary labelled (or only) table.
 
     Demos always set ``train_csv``. User source bundles may list files only
-    under ``sources``; the first CSV (or first source) is the starting table.
+    under ``sources``; prefer a train-named CSV over a test-named one.
     """
     if data.train_csv:
         return data.train_csv
+    inferred = infer_source_paths(data.sources)
+    if inferred["train"]:
+        return inferred["train"]
     for src in data.sources:
         if src.path.lower().endswith(".csv"):
             return src.path
@@ -103,6 +107,7 @@ def load_case_config(path: Path) -> CaseConfig:
             "sources": sources,
         }
     )
+    data = reconcile_data_paths(data)
     return cfg.model_copy(update={"data": data})
 
 

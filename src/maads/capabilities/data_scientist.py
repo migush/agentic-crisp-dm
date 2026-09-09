@@ -13,6 +13,7 @@ from maads.capabilities.shared import (
     record_degraded,
 )
 from maads.deltas import StateDelta
+from maads.schema_inference import apply_inferred_schema
 from maads.state import CrispDMState, EvaluationBundle, ModelRun, coerce_evaluation_bundle
 from maads.success_criterion import normalize_assessment
 from maads.tools import inspect_dataset
@@ -149,12 +150,40 @@ def execution_evidence(
             id_column=state.config.id_column or None,
             na_means_absent=list(hints.get("na_means_absent") or []),
         )
-        return {"data_exploration_report": ml_tools.explore_report_from_profile(profile, target)}
+        schema_fields = apply_inferred_schema(state, profile=profile)
+        target = state.resolved_target()
+        if target and not (
+            isinstance(profile.get("target"), dict) and profile["target"].get("name") == target
+        ):
+            profile = ml_tools.profile_dataset(
+                train,
+                target=target,
+                id_column=state.config.id_column or None,
+                na_means_absent=list(hints.get("na_means_absent") or []),
+            )
+        return {
+            "data_exploration_report": ml_tools.explore_report_from_profile(profile, target),
+            "schema_fields": schema_fields,
+        }
 
     if substep == "4.3":
         dataset_train = state.dp.dataset.get("train")
         if not dataset_train:
             return {}
+        schema_fields: list[str] = []
+        if not state.resolved_target():
+            last_profile = ml_tools.profile_dataset(
+                dataset_train,
+                target=None,
+                id_column=state.config.id_column or None,
+            )
+            schema_fields = apply_inferred_schema(state, profile=last_profile)
+        target = state.resolved_target()
+        if not target:
+            raise RuntimeError(
+                "target_column is unset; cannot run modeling baselines"
+            )
+        hints = state.config.feature_hints or {}
         findings = ml_tools.lint_prepared_features(
             dataset_train,
             target=target,
@@ -194,6 +223,7 @@ def execution_evidence(
                 "artifact_path": best.get("artifact_path") or "",
             },
             "candidate_runs": compared.get("candidates") or [],
+            "schema_fields": schema_fields,
         }
 
     if substep == "4.4":
@@ -257,7 +287,7 @@ def apply_response(
     du = su.get("du") or {}
     md = su.get("md") or {}
     ev = su.get("ev") or {}
-    fields: list[str] = []
+    fields: list[str] = list(execution.get("schema_fields") or [])
 
     if substep == "2.3":
         report = execution_or_llm(execution, du, "data_exploration_report")

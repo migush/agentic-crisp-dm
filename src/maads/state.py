@@ -363,6 +363,16 @@ class CrispDMState(BaseModel):
         self.config = self.config.model_copy(update={"target_column": name})
         return True
 
+    def adopt_id_if_blank(self, candidate: str | None) -> bool:
+        """Persist an evidence-backed identifier when the user omitted one."""
+        if (self.config.id_column or "").strip():
+            return False
+        name = (candidate or "").strip()
+        if not name:
+            return False
+        self.config = self.config.model_copy(update={"id_column": name})
+        return True
+
     # ── Prerequisite checks the orchestrator uses ─────────────────────────
 
     def substep_prereqs_satisfied(self, substep: str) -> bool:

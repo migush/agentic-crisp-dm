@@ -84,14 +84,31 @@ def test_phase3_blank_config_target_uses_exploration_report(tmp_path: Path, stat
     assert state.config.target_column == "Sentiment"
 
 
+def test_phase3_blank_target_infers_from_parquet(tmp_path: Path, state: CrispDMState):
+    train = tmp_path / "train.parquet"
+    _write_parquet(
+        train,
+        pd.DataFrame({
+            "UserName": [1, 2, 3, 4],
+            "OriginalTweet": ["aa", "bb", "cc", "dd"],
+            "Sentiment": ["pos", "neg", "neu", "pos"],
+        }),
+    )
+    state.config = state.config.model_copy(update={"target_column": ""})
+    state.dp.dataset = {"train": str(train), "test": str(train)}
+    assert validate_phase_3_artifacts(state) == []
+    assert state.config.target_column == "Sentiment"
+
+
 def test_phase3_blank_target_without_inference_is_explicit(tmp_path: Path, state: CrispDMState):
     train = tmp_path / "train.parquet"
-    _write_parquet(train, pd.DataFrame({"Sentiment": ["pos", "neg"], "note": ["a", "b"]}))
+    _write_parquet(train, pd.DataFrame({"note": ["a", "b"], "other": ["x", "y"]}))
     state.config = state.config.model_copy(update={"target_column": ""})
     state.dp.dataset = {"train": str(train), "test": str(train)}
     errors = validate_phase_3_artifacts(state)
     assert any("target_column is unset" in e for e in errors)
     assert not any("target '' not in" in e for e in errors)
+    assert not state.config.target_column
 
 
 def test_phase3_target_nan(tmp_path: Path, state: CrispDMState):
