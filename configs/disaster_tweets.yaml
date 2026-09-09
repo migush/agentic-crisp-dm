@@ -19,6 +19,7 @@ data:
 feature_hints:
   text_free: [text]
   categorical_weak: [keyword, location]
+  na_means_absent: [keyword, location]
   # Strong hint for the Data Engineer: the main feature is text. A working
   # representation is TF-IDF + classical ML, OR sentence embeddings via the
   # OpenAI embeddings endpoint + classical ML. Do NOT fine-tune a transformer.

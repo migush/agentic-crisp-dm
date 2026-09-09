@@ -48,6 +48,7 @@ __all__ = [
     "resolve_model_for_agent",
     "reset_llm_caches",
     "build_task_description",
+    "extract_kickoff_token_usage",
     "pop_last_json_task_meta",
     "pop_last_kickoff_output",
     "run_json_task",
@@ -80,6 +81,35 @@ def pop_last_json_task_meta() -> dict[str, Any] | None:
 
 class CrewKickoffError(RuntimeError):
     """CrewAI kickoff failed (LLM timeout, provider error, etc.)."""
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def extract_kickoff_token_usage(
+    token_usage: Any,
+) -> tuple[int | None, int | None, int | None]:
+    """Per-kickoff tokens: ``(n_tokens, n_input, n_output)``.
+
+    Prefer ``prompt_tokens + completion_tokens`` so CrewAI's cumulative
+    ``total_tokens`` is not re-added into ``state.token_spend``.
+    """
+    if token_usage is None:
+        return None, None, None
+    n_in = _coerce_int(getattr(token_usage, "prompt_tokens", None))
+    n_out = _coerce_int(getattr(token_usage, "completion_tokens", None))
+    total = _coerce_int(getattr(token_usage, "total_tokens", None))
+    if n_in is not None or n_out is not None:
+        return (n_in or 0) + (n_out or 0), n_in, n_out
+    if total is not None:
+        return total, None, None
+    return None, None, None
 
 
 def make_agent(agent_name: str, dataset_name: str = "") -> Agent:
@@ -261,17 +291,12 @@ def _kickoff(
 
     raw_output = str(output)
     _last_crew_output.set(raw_output)
-    total_tokens = None
-    n_input = n_output = None
-    try:
-        total_tokens = int(output.token_usage.total_tokens)
-        n_input = int(output.token_usage.prompt_tokens)
-        n_output = int(output.token_usage.completion_tokens)
-    except (AttributeError, TypeError, ValueError):
-        pass
+    usage = getattr(output, "token_usage", None)
+    total_tokens, n_input, n_output = extract_kickoff_token_usage(usage)
     _last_crew_tokens.set(total_tokens)
 
-    # Token accounting — record CrewAI usage on shared state.
+    # Token accounting — record this kickoff's prompt+completion, not a
+    # cumulative CrewAI total_tokens counter.
     try:
         if total_tokens is not None:
             provider = _resolve_llm_provider(agent_name)

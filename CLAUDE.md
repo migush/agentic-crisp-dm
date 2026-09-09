@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`maads` is a five-agent system (Project Manager, Domain, Data Engineer, Data Scientist, Developer) that walks
-Kaggle-style problems through the CRISP-DM 1.0 process model. CrewAI powers LLM calls; a typed shared state
-(`CrispDMState`) and trace tooling make runs observable. The same agent code and prompts must work unmodified
-across all three demo cases (titanic, house_prices, disaster_tweets) — only the per-case YAML config differs.
-See `docs/ARCHITECTURE.md` for the full flow graph and module table.
+`maads` is a six-agent system (Project Manager, Domain, Data Engineer, Data Scientist, Developer, Storyteller)
+that walks Kaggle-style problems through the CRISP-DM 1.0 process model. CrewAI powers LLM calls; a typed
+shared state (`CrispDMState`) and trace tooling make runs observable. The same agent code and prompts must
+work unmodified across all three demo cases (titanic, house_prices, disaster_tweets) — only the per-case
+YAML config differs. See `docs/ARCHITECTURE.md` for the full flow graph and module table.
 
 ## Setup
 
@@ -48,7 +48,7 @@ pytest tests/test_flow_happy_path.py::test_name -q  # single test
 coverage report --show-missing
 ```
 
-Dashboard binds `127.0.0.1:8765`. It reads `artifacts/<case>/runs/<run_id>/` via the `current` symlink;
+Dashboard binds `127.0.0.1:8765`. It reads `artifacts/<case>/runs/<run_id>/` via the `current` text run-id pointer;
 API docs at `/api/docs`, schema at `/api/openapi.json`. Communications transcripts contain full LLM
 prompts — local use only, never expose this dashboard externally.
 
@@ -82,11 +82,11 @@ Loop contours (when each back-edge fires, retry caps) are defined declaratively 
 | `flow/phase_runner.py` | Shared substep dispatch, advance, loop-back, retry caps |
 | `flow/routers.py` | PM checkpoint routing helpers |
 | `flow/tracing.py` | Trace + status flush hooks fired on flow transitions |
-| `crews/<name>_crew/` | Phase-scoped `@CrewBase` crew; each has its own `config/tasks.yaml` but shares `config/agents.yaml` (canonical copy in `src/maads/config/`) |
-| `crews/kickoff.py` | `kickoff_substep` — one-agent Crew kickoff used by every substep |
+| `crews/<name>_crew/` | Thin per-role kickoff routers (JSON via `kickoff_json`); canonical YAML in `src/maads/config/` |
+| `crews/kickoff.py` | `kickoff_json` — one-agent Crew kickoff used by every LLM substep |
 | `capabilities/` | Deterministic Python execution per role (data_engineer, data_scientist, developer, domain) — sandboxed code execution + JSON response application, not LLM calls |
 | `state.py` | `CrispDMState` — single source of truth for run state (583 lines; read before changing state shape) |
-| `agents.py` | The five agent wrappers (PM, Domain, Data Engineer, Data Scientist, Developer) |
+| `agents.py` | The six agent wrappers (PM, Domain, Data Engineer, Data Scientist, Developer, Storyteller) |
 | `crew.py` | The CrewAI LLM call seam — tests monkeypatch `maads.crew.run_text_task` to fake LLM output |
 | `observability/` | OpenTelemetry-based trace export: timeline, narrative, diagrams, LLM communications log |
 | `reports/` | Post-run artifacts: case report, execution analysis, final report, handoff/postmortem docs |
@@ -107,8 +107,8 @@ leakage/CV discipline (`skills/leakage-cv-discipline/SKILL.md`).
 ### Artifacts layout (per case, per run)
 
 `artifacts/<case>/runs/<run_id>/` holds `status.json`, `process.json`, `state.json`, `trace/`
-(timelines, diagrams, `communications.md` — full agent↔LLM transcript). `artifacts/<case>/current` symlinks
-to the latest run; `runs_index.json` lists all runs for a case.
+(timelines, diagrams, `communications.md` — full agent↔LLM transcript). `artifacts/<case>/current` is a
+text file naming the latest run id; `runs_index.json` lists all runs for a case.
 
 ### Testing conventions
 

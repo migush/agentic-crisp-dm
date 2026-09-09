@@ -64,3 +64,13 @@ def test_de_dataset_context_includes_na_means_absent(house_state: CrispDMState):
     inspect = json.loads(ctx["DATASET_INSPECT_JSON"])
     assert "PoolQC" in inspect["na_means_absent"]
     assert "Alley" in inspect["na_means_absent"]
+
+
+def test_disaster_tweets_marks_keyword_location_as_structural_absence() -> None:
+    cfg = load_case_config(resolve_path("configs/disaster_tweets.yaml"))
+    assert cfg.feature_hints["na_means_absent"] == ["keyword", "location"]
+    state = CrispDMState.from_config(cfg)
+    assert state.view_for("pm")["quality_gate"]["na_means_absent"] == [
+        "keyword",
+        "location",
+    ]

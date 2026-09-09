@@ -4,7 +4,7 @@
 
 **Agents:** Project Manager, Domain, Data Engineer, Data Scientist, Developer, **Storyteller**.
 
-Older docs (`CLAUDE.md`, README) still say “five agents”. Treat that as stale.
+Canonical personas live in `src/maads/config/agents.yaml`. Phase crews are thin JSON kickoff routers.
 
 ## Layout
 
@@ -88,7 +88,7 @@ Every specialist substep: `capabilities.execution_evidence` → crew `kickoff_su
 
 ## Env (see `.env.example`)
 
-`MODEL`, `MODEL_CODE`, `OPENAI_API_KEY`, `MAX_TOKENS_PER_RUN`, `MAADS_TRACE`, `MAADS_TRACE_LLM_IO`, `MAADS_PROGRESS`, `MAADS_SKIP_MODEL_PROBE`. Webapp: `WEBAPP_JWT_SECRET` (required in prod), `WEBAPP_ALLOW_DEV_SECRET`, `WEBAPP_INSECURE_COOKIES`, `WEBAPP_ALLOWED_ORIGINS`.
+`MODEL`, `MODEL_CODE`, `OPENAI_API_KEY`, `MAX_TOKENS_PER_RUN`, `MAADS_RUN_DEADLINE_SEC`, `MAADS_TRACE`, `MAADS_TRACE_LLM_IO`, `MAADS_PROGRESS`, `MAADS_SKIP_MODEL_PROBE`. Webapp: `WEBAPP_JWT_SECRET` (required in prod), `WEBAPP_ALLOW_DEV_SECRET`, `WEBAPP_INSECURE_COOKIES`, `WEBAPP_ALLOWED_ORIGINS`, `WEBAPP_RUN_TIMEOUT_SEC`.
 
 ## Success criteria
 

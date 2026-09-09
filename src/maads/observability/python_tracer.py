@@ -29,7 +29,11 @@ def _skip_traced_exception(exc_type: type[BaseException], exc_val: BaseException
     msg = str(exc_val).strip("'\"")
     if "token cap" in msg.lower() or "token budget" in msg.lower():
         return True
-    return msg in {"MAX_TOKENS_PER_RUN"} or "MAX_TOKENS_PER_RUN" in msg
+    return msg in {
+        "MAX_TOKENS_PER_RUN",
+        "MAADS_TRACE_OTEL",
+        "MAADS_TRACE_INCREMENTAL",
+    } or "MAX_TOKENS_PER_RUN" in msg
 
 
 class PythonTracer:

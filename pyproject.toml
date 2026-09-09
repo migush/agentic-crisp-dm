@@ -55,7 +55,7 @@ include = ["maads*"]
 # Ship the agent/task config and backstory prompts as package data (loaded via
 # importlib.resources, so they must be present in installed wheels too).
 [tool.setuptools.package-data]
-maads = ["config/*.yaml", "prompts/identities/backstories/*.md", "crews/**/config/tasks.yaml"]
+maads = ["config/*.yaml", "prompts/identities/backstories/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
