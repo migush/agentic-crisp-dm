@@ -119,6 +119,9 @@ class CrispDMFlow(Flow[CrispDMState]):
         if self.state.halted:
             self._last_checkpoint_route = "halt"
             return
+        # Align with checkpoint_5_1: label the decision point before consulting PM.
+        self.state.phase = Phase.DATA_PREPARATION
+        self.state.substep = "3.1"
         self._last_checkpoint_route = checkpoint_route(self._ctx)
 
     @router(enter_checkpoint_3_1)

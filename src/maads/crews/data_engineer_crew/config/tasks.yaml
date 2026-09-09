@@ -1,13 +1,6 @@
+# Scaffold stubs only — live task descriptions come from compile_task_payload
+# (src/maads/config/tasks.yaml) via kickoff_json / run_json_task.
 substep_json:
-  description: >
-    CRISP-DM substep {substep} ({substep_name}).
-
-    {instruction}
-
-    Relevant state (JSON):
-
-    {state_view}
-
-    Respond ONLY with JSON matching: {schema_hint}
-  expected_output: A single JSON object, no prose, no Markdown fences.
+  description: "CRISP-DM substep — description assembled at kickoff via compile_task_payload."
+  expected_output: A single JSON object, no prose, no Markdown fences. Response must begin with '{' and end with '}'.
   agent: data_engineer

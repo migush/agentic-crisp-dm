@@ -259,6 +259,27 @@ Combined, a Titanic run could plausibly drop from **~2.75M / ~2 h** to **~400–
 
 ---
 
+## Reasoning-tier cost on Data Engineer codegen (task20 / gpt-5.5-pro)
+
+Disaster-tweets / task20 communications show Data Engineer **codegen** calls where
+`tokens.total` is far larger than prompt + completion reported in the transcript.
+That gap is typical of **hidden reasoning tokens** on reasoning-tier models such as
+`gpt-5.5-pro`: the API bills internal chain-of-thought that never appears as visible
+completion text.
+
+Prompt slimming (this change set) cuts repeated backstory/state/schema waste, but it
+does **not** remove reasoning-tier overhead on `run_text_task` authoring. When tuning
+cost for code-authoring only, evaluate:
+
+- lower `reasoning_effort` for DE/developer codegen paths, and/or
+- a non-reasoning / cheaper code model for `MODEL_CODE` / DE text tasks
+
+Keep JSON planning/decision roles on the stronger model if quality requires it.
+**No default model or env change** is recommended here — this is a cost/quality dial
+for operators after measuring a live run.
+
+---
+
 ## What to inspect next
 
 If you want to dig deeper in artifacts:

@@ -687,14 +687,23 @@ def minimal_agent_output(
     return payload
 
 
-def schema_hint_for_agent(agent_name: str, *, substep: str | None = None) -> str:
-    """Compact schema hint string for task prompts."""
-    import json
+def _compact_model_shape(model: type[BaseModel]) -> str:
+    """Required/optional top-level keys only — not full Pydantic JSON Schema."""
+    required = set(model.model_json_schema().get("required") or [])
+    lines = [f"Top-level keys for {model.__name__}:"]
+    for name, field in model.model_fields.items():
+        ann = getattr(field.annotation, "__name__", None) or str(field.annotation)
+        flag = "required" if name in required else "optional"
+        lines.append(f'  "{name}": {ann} ({flag})')
+    return "\n".join(lines)
 
+
+def schema_hint_for_agent(agent_name: str, *, substep: str | None = None) -> str:
+    """Compact schema hint string for task prompts (not full model_json_schema)."""
     model = _AGENT_MODELS.get(agent_name)
     if model is None:
         return "{}"
-    parts = [json.dumps(model.model_json_schema(), indent=2)]
+    parts = [_compact_model_shape(model)]
     if agent_name in _SPECIALIST_AGENTS:
         parts.append(_SCHEMA_SHAPE_NOTES.strip())
         example = _SUBSTEP_SCHEMA_EXAMPLES.get((agent_name, substep or ""))

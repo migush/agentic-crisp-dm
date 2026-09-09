@@ -74,3 +74,18 @@ def test_compile_task_payload_state_only():
     )
     assert "Current CRISP-DM state (JSON):" in payload
     assert "Decide next." in payload
+
+
+def test_compile_task_payload_authored_code_skips_json_scaffold():
+    payload = compile_task_payload(
+        agent_name="data_engineer",
+        instruction="Write cleaning code.",
+        state_view={"case_id": "titanic", "substep": "3.2"},
+        template_kind="authored_code",
+        substep="3.2",
+    )
+    assert "Write cleaning code." in payload
+    assert "Relevant state (JSON):" in payload
+    assert "Respond ONLY with JSON" not in payload
+    assert "schema_hint" not in payload
+    assert "Python code block" in payload or "Do not wrap the code in JSON" in payload

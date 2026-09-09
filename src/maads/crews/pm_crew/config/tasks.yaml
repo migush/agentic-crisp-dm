@@ -1,29 +1,16 @@
+# Scaffold stubs only — live task descriptions come from compile_task_payload
+# (src/maads/config/tasks.yaml) via kickoff_json / run_json_task.
 decision_task:
-  description: >
-    Current CRISP-DM state (JSON):
-
-    {state_view}
-
-    {instruction}
-  expected_output: A single JSON object, no prose, no Markdown fences.
+  description: "PM decision — description assembled at kickoff via compile_task_payload."
+  expected_output: A single JSON object, no prose, no Markdown fences. Response must begin with '{' and end with '}'.
   agent: pm
 
 review_task:
-  description: >
-    Current CRISP-DM state (JSON):
-
-    {state_view}
-
-    {instruction}
-  expected_output: A single JSON object, no prose, no Markdown fences.
+  description: "PM review — description assembled at kickoff via compile_task_payload."
+  expected_output: A single JSON object, no prose, no Markdown fences. Response must begin with '{' and end with '}'.
   agent: pm
 
 next_steps_task:
-  description: >
-    Current CRISP-DM state (JSON):
-
-    {state_view}
-
-    {instruction}
-  expected_output: A single JSON object, no prose, no Markdown fences.
+  description: "PM next steps — description assembled at kickoff via compile_task_payload."
+  expected_output: A single JSON object, no prose, no Markdown fences. Response must begin with '{' and end with '}'.
   agent: pm

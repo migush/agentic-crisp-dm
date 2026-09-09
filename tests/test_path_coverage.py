@@ -78,6 +78,7 @@ def test_loop_back_fires_and_records_history(mock_llm, titanic_state: CrispDMSta
 
     plans = iter([
         Plan(action="advance", reason="run 1.1"),
+        Plan(action="advance", reason="run 2.1"),
         Plan(
             action="loop_back",
             loop_label="B",
@@ -92,8 +93,12 @@ def test_loop_back_fires_and_records_history(mock_llm, titanic_state: CrispDMSta
 
     assert titanic_state.loop_history
     assert titanic_state.loop_history[0].label == "B"
-    assert titanic_state.phase == Phase.DATA_PREPARATION
-    assert titanic_state.substep == "3.1"
+    # Loop B returns to phase 3; without a PM gate at 3.1 entry the phase runs,
+    # then the next decision point (4.1) receives the halt plan.
+    assert titanic_state.halted
+    assert titanic_state.halt_reason == "stop after loop"
+    assert titanic_state.phase == Phase.MODELING
+    assert titanic_state.substep == "4.1"
 
 
 @patch("maads.agents.run_json_task")

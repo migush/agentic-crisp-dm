@@ -119,7 +119,7 @@ def _patch_crew() -> None:
             agent_name, instruction, state, schema_hint, json_enforced=json_enforced,
         )
         model_name = getattr(getattr(agent, "llm", None), "model", None)
-        role = AGENT_PROMPTS.get(agent_name, {}).get("role")
+        role = getattr(agent, "role", None) or AGENT_PROMPTS.get(agent_name, {}).get("role")
 
         run = coll.run
         run_id = run.run_id if run else ""

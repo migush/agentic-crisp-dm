@@ -125,7 +125,7 @@ def test_agent_identity_embedded(agent_id):
     if agent_id == "data_scientist":
         assert p["role"] == "Senior Data Scientist (Modeling & Evaluation)"
         assert "MODEL FAMILY SELECTION" in p["backstory"]
-        assert "UNCERTAINTY AND WEAK RESULTS" in p["backstory"]
+        assert "Leakage prevention" in p["backstory"]
         assert "MODELING BOUNDARY" not in p["backstory"]
 
 
@@ -170,4 +170,58 @@ def test_next_substep_walks_phases():
     state.phase = Phase.DEPLOYMENT
     state.substep = "6.4"
     assert next_substep(state) is None
+
+
+def test_de_view_for_is_substep_scoped():
+    cfg = load_case_config(REPO_ROOT / "configs" / "titanic.yaml")
+    state = CrispDMState.from_config(cfg)
+    state.du.data_description_report = {"n_rows": 10}
+    state.du.data_quality_report = {"blockers": []}
+    state.du.data_exploration_report = {"notes": "x"}
+    state.dp.rationale_for_inclusion_exclusion = {"keep": ["Age"]}
+    state.dp.data_cleaning_report = {"ops": []}
+    state.dp.derived_attributes = {"items": [{"field": "FamilySize"}]}
+    state.dp.generated_records = {"count": 0}
+    state.dp.merged_data = {"path": "merged.parquet"}
+    state.dp.reformatted_data = {"huge": True}
+
+    state.substep = "2.1"
+    v21 = state.view_for("data_engineer")
+    assert v21["du_so_far"] == {}
+    assert v21["dp_so_far"] == {}
+    assert "feature_hints" in v21
+
+    state.substep = "2.4"
+    v24 = state.view_for("data_engineer")
+    assert set(v24["du_so_far"]) == {"data_description_report"}
+    assert v24["dp_so_far"] == {}
+
+    state.substep = "3.1"
+    v31 = state.view_for("data_engineer")
+    assert set(v31["du_so_far"]) == {
+        "data_quality_report",
+        "data_description_report",
+        "data_exploration_report",
+    }
+    assert v31["dp_so_far"] == {}
+
+    state.substep = "3.5"
+    v35 = state.view_for("data_engineer")
+    assert "reformatted_data" not in v35["dp_so_far"]
+    assert set(v35["dp_so_far"]) == {
+        "rationale_for_inclusion_exclusion",
+        "data_cleaning_report",
+        "derived_attributes",
+        "generated_records",
+        "merged_data",
+    }
+
+
+def test_domain_agent_role_formats_dataset_name():
+    from maads.crew_base import agent_for, reset_llm_caches
+
+    reset_llm_caches()
+    agent = agent_for("domain", "titanic")
+    assert "{dataset_name}" not in agent.role
+    assert "titanic" in agent.role.lower() or "titanic" in agent.role
 

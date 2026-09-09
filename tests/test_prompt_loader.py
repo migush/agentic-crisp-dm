@@ -60,7 +60,8 @@ def test_json_termination_constants_exported():
     assert "end with '}'" in JSON_TERMINATION_INSTRUCTION
 
 
-def test_json_task_scaffolds_include_termination_instruction():
+def test_json_task_scaffolds_put_termination_in_expected_output():
+    """JSON termination lives once in expected_output, not duplicated in description."""
     for kind in ("state_only", "substep_json"):
         scaffold = task_scaffold(kind)
         if kind == "state_only":
@@ -76,6 +77,18 @@ def test_json_task_scaffolds_include_termination_instruction():
                 state_view="{}",
                 schema_hint="{}",
             )
-        assert JSON_TERMINATION_INSTRUCTION in rendered
+        assert JSON_TERMINATION_INSTRUCTION not in rendered
+        assert "Respond ONLY with JSON" in rendered
         assert "begin with '{'" in scaffold["expected_output"]
         assert "end with '}'" in scaffold["expected_output"]
+
+
+def test_authored_code_scaffold_has_no_json_termination():
+    scaffold = task_scaffold("authored_code")
+    rendered = scaffold["description"].format(
+        instruction="Write prepare.py",
+        state_view='{"case_id": "titanic"}',
+    )
+    assert "Respond ONLY with JSON" not in rendered
+    assert JSON_TERMINATION_INSTRUCTION not in rendered
+    assert "Python code block" in scaffold["expected_output"]

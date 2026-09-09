@@ -203,7 +203,10 @@ def build_task_description(
     dataset_name = state.case_id if agent_name == "domain" else ""
     agent = agent_for(agent_name, dataset_name, json_enforced=json_enforced)
     state_view = json.dumps(view, default=str, ensure_ascii=False)
-    template_kind = AGENT_TASK_TEMPLATES.get(agent_name, "substep_json")
+    if not json_enforced:
+        template_kind = "authored_code"
+    else:
+        template_kind = AGENT_TASK_TEMPLATES.get(agent_name, "substep_json")
     description = compile_task_payload(
         agent_name=agent_name,
         instruction=instruction,

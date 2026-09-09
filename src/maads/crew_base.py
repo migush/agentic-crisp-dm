@@ -235,7 +235,8 @@ class MaadsCrew:
 
     @agent
     def domain(self) -> Agent:
-        return build_agent("domain", AGENT_PROMPTS["domain"])
+        # CrewBase registration only; live calls use agent_for + domain_identity(case_id).
+        return build_agent("domain", domain_identity("dataset"))
 
     @agent
     def data_engineer(self) -> Agent:
@@ -290,18 +291,11 @@ def agent_for(name: str, dataset_name: str = "", json_enforced: bool = True) -> 
     not forced into JSON/structured output mode.
     """
     case_id = dataset_name
-    if name == "domain" and dataset_name:
+    if name == "domain":
         return build_agent(
             "domain",
-            domain_identity(dataset_name),
-            case_id=case_id,
-            json_enforced=json_enforced,
-        )
-    if name == "domain" and case_id:
-        return build_agent(
-            "domain",
-            AGENT_PROMPTS["domain"],
-            case_id=case_id,
+            domain_identity(dataset_name or case_id or "dataset"),
+            case_id=case_id or None,
             json_enforced=json_enforced,
         )
     if json_enforced:

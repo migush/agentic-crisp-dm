@@ -175,7 +175,7 @@ def test_phase1_domain_llm_substeps_run_in_order(
 def test_pm_decision_substeps_cover_phase_boundaries_and_loops():
     """PM LLM should fire at phase entry and loop checkpoints, not every substep."""
     assert "1.1" in PM_DECISION_SUBSTEPS
-    assert "3.1" in PM_DECISION_SUBSTEPS
+    assert "3.1" not in PM_DECISION_SUBSTEPS  # Loop A only at checkpoint_3_1
     assert "5.1" in PM_DECISION_SUBSTEPS
     assert "5.2" in PM_DECISION_SUBSTEPS
     assert "1.2" not in PM_DECISION_SUBSTEPS
@@ -230,7 +230,8 @@ def test_pm_llm_called_at_each_decision_substep(
         flow._pm.plan = track_plan  # type: ignore[method-assign]
         flow.run()
 
-    assert set(pm_calls) == set(PM_DECISION_SUBSTEPS)
-    # 3.1 is consulted at the phase-2 exit checkpoint and again at phase-3 entry.
-    assert pm_calls.count("3.1") == 2
+    assert set(pm_calls) == set(PM_DECISION_SUBSTEPS) | {"3.1"}
+    # Loop A is decided only at checkpoint_3_1 (phase-2 exit), not again at 3.1 entry.
+    assert pm_calls.count("3.1") == 1
+    assert "3.1" not in PM_DECISION_SUBSTEPS
     assert len(pm_calls) == len(PM_DECISION_SUBSTEPS) + 1

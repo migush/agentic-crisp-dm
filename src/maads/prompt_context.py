@@ -33,6 +33,11 @@ def compile_task_payload(
             state_view=state_view_json,
             instruction=instruction,
         )
+    if template_kind == "authored_code":
+        return task_scaffold("authored_code")["description"].format(
+            instruction=instruction,
+            state_view=state_view_json,
+        )
     return task_scaffold("substep_json")["description"].format(
         substep=substep,
         substep_name=SUBSTEP_NAMES.get(substep, "?"),

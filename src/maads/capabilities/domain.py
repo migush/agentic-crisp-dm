@@ -81,14 +81,54 @@ def apply_understanding(data: dict, state: CrispDMState) -> StateDelta:
 
 def apply_situation(data: dict, state: CrispDMState) -> StateDelta:
     sit = data.get("situation_assessment") or data
+    fields: list[str] = []
     if sit:
-        state.bu.inventory_of_resources = {
-            **(state.bu.inventory_of_resources or {}),
-            "situation_1_2": sit,
-        }
+        inv = dict(state.bu.inventory_of_resources or {})
+        inv["situation_1_2"] = sit
+        artifacts = dict(inv.get("domain_artifacts") or {})
+        for key in (
+            "data_description_notes",
+            "feature_hints",
+            "domain_data_quality_flags",
+        ):
+            if data.get(key) is not None:
+                artifacts[key] = data[key]
+        if artifacts:
+            inv["domain_artifacts"] = artifacts
+        state.bu.inventory_of_resources = inv
         if sit.get("risks"):
             state.bu.risks_and_contingencies = sit.get("risks", [])
-        return StateDelta(["bu.inventory_of_resources", "bu.risks_and_contingencies"])
+            fields.append("bu.risks_and_contingencies")
+        fields.append("bu.inventory_of_resources")
+        # Merge situation assumptions into requirements block when present.
+        rac = dict(state.bu.requirements_assumptions_constraints or {})
+        if sit.get("requirements") is not None:
+            rac["requirements"] = sit.get("requirements", [])
+        if sit.get("assumptions") is not None or data.get("assumptions") is not None:
+            rac["assumptions"] = list(sit.get("assumptions") or []) + list(
+                data.get("assumptions") or []
+            )
+        if sit.get("constraints") is not None:
+            rac["constraints"] = sit.get("constraints", [])
+        if data.get("open_questions") is not None:
+            rac["open_questions"] = data.get("open_questions", [])
+        if rac != (state.bu.requirements_assumptions_constraints or {}):
+            state.bu.requirements_assumptions_constraints = rac
+            fields.append("bu.requirements_assumptions_constraints")
+        if sit.get("terminology"):
+            state.bu.terminology = {
+                t["term"]: t["meaning"]
+                for t in sit.get("terminology", [])
+                if isinstance(t, dict) and t.get("term")
+            }
+            fields.append("bu.terminology")
+        if sit.get("costs_or_tradeoffs") is not None or sit.get("expected_benefits") is not None:
+            state.bu.costs_and_benefits = {
+                "costs_or_tradeoffs": sit.get("costs_or_tradeoffs", []),
+                "expected_benefits": sit.get("expected_benefits", []),
+            }
+            fields.append("bu.costs_and_benefits")
+        return StateDelta(fields or ["bu.inventory_of_resources"])
     return StateDelta(notes="1.2 situation assessment empty")
 
 
