@@ -29,30 +29,33 @@ def state() -> CrispDMState:
     return CrispDMState.from_config(cfg)
 
 
-def test_real_quality_blockers_reach_pm_view(state: CrispDMState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    quality_code = '''```python
-import pandas as pd, json
-df = pd.read_csv(TRAIN_CSV)
-blockers = []
-tolerable = []
-if df[TARGET].isna().any():
-    blockers.append("target missing")
-for c in df.columns:
-    if df[c].isna().mean() > 0.4:
-        blockers.append(f"{c}: high missing")
-print(json.dumps({"blockers": blockers, "tolerable": tolerable}))
-```'''
-    monkeypatch.setattr("maads.crew.run_text_task", lambda *a, **k: quality_code)
+def test_documented_missing_hints_are_not_quality_blockers(
+    state: CrispDMState, tmp_path: Path,
+):
+    """Columns listed in high_missing / na_means_absent are documented, not Loop A blockers."""
+    hints = state.config.feature_hints or {}
+    documented = [
+        str(c)
+        for key in ("high_missing", "na_means_absent")
+        for c in (hints.get(key) or [])
+    ]
+    if not documented:
+        pytest.skip("fixture case has no documented-missing hints")
     state.substep = "2.4"
     de = DataEngineerAgent(artifact_dir=tmp_path)
     delta = de.act(state)
     assert not delta.failed, delta.notes
-    assert state.du.data_quality_report
-    blockers = state.du.data_quality_report.get("blockers", [])
-    assert blockers
-    pm_view = state.view_for("pm")
-    assert pm_view["latest_quality_blockers"]
-    assert "quality_gate" in pm_view
+    report = state.du.data_quality_report or {}
+    blockers = report.get("blockers") or []
+    tolerable = report.get("tolerable") or []
+    for col in documented:
+        assert not any(col in b for b in blockers), blockers
+        assert any(col in t for t in tolerable), tolerable
+    gate = state.view_for("pm")["quality_gate"]
+    for col in hints.get("high_missing") or []:
+        assert str(col) in gate["high_missing"]
+    for col in hints.get("na_means_absent") or []:
+        assert str(col) in gate["na_means_absent"]
 
 
 def test_validator_findings_populate_and_reach_pm(state: CrispDMState, tmp_path: Path):
@@ -82,6 +85,7 @@ def test_fire_loop_tolerates_stringy_phase(tmp_path: Path, state: CrispDMState):
 def test_fire_loop_clears_validator_findings(tmp_path: Path, state: CrispDMState):
     ctx = make_run_context(state, tmp_path)
     state.validator_findings = ["some deficit"]
+    state.ev.assessment_of_dm_results = {"meets": False, "cv_score": 0.70}
     state.phase = Phase.MODELING
     apply_loop(
         ctx,
@@ -93,6 +97,7 @@ def test_fire_loop_clears_validator_findings(tmp_path: Path, state: CrispDMState
         ),
     )
     assert state.validator_findings == []
+    assert state.ev.assessment_of_dm_results is None
     assert state.loop_history and state.loop_history[-1].label == "B"
 
 
@@ -121,6 +126,29 @@ def test_business_goal_met_unknown_at_5_1_before_assessment(state: CrispDMState)
     state.ev.assessment_of_dm_results = None
     pm_view = state.view_for("pm")
     assert pm_view["business_goal_met"] is None
+    assert state._suggested_pm_action() is None
+
+
+def test_business_goal_met_unknown_at_5_1_with_stale_assessment(state: CrispDMState):
+    state.substep = "5.1"
+    state.ev.assessment_of_dm_results = {
+        "meets": False,
+        "cv_score": 0.70,
+        "threshold": 0.77,
+    }
+    pm_view = state.view_for("pm")
+    assert pm_view["business_goal_met"] is None
+    assert state._suggested_pm_action() is None
+
+
+def test_loop_c_not_suggested_after_already_fired(state: CrispDMState):
+    state.substep = "5.2"
+    state.ev.assessment_of_dm_results = {
+        "meets": False,
+        "cv_score": 0.70,
+        "threshold": 0.77,
+    }
+    state.record_loop("C", 5, 1, "first Loop C")
     assert state._suggested_pm_action() is None
 
 

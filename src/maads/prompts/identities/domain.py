@@ -141,11 +141,11 @@ Output strict JSON matching the situation schema hint."""
 
 DOMAIN_REFINE_GOALS_TASK = """CRISP-DM 1.3 Determine Data Mining Goals for "{dataset_name}".
 
-Given the data quality report, feature_hints (including na_means_absent), and current
+Given the data quality report, feature_hints (including na_means_absent and high_missing), and current
 business understanding in the state view, refine data_mining_goals and success criteria
 only if quality evidence warrants a change. If the existing success criterion remains
 valid, omit success_criterion or echo it unchanged. High missingness on na_means_absent
-columns means feature absence, not data corruption — do not recommend Loop A for those
+or high_missing columns means feature absence, not data corruption — do not recommend Loop A for those
 alone. Recommend Loop A only when quality blockers contradict goals or require a
 fundamental rethink.
 

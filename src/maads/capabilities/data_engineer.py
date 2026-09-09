@@ -40,6 +40,7 @@ def execution_evidence(
     _require_inspect_ok(ds_ctx)
     sources = source_locations(state.config.data)
     na_absent = list(hints.get("na_means_absent") or [])
+    high_missing = list(hints.get("high_missing") or [])
 
     if substep == "2.1":
         return {
@@ -51,18 +52,19 @@ def execution_evidence(
     if substep == "2.2":
         profile = ml_tools.profile_dataset(
             train, test or None, target=target or None, id_column=idc or None,
-            na_means_absent=na_absent,
+            na_means_absent=na_absent, high_missing=high_missing,
         )
         return {"data_description_report": ml_tools.describe_report_from_profile(profile)}
 
     if substep == "2.4":
         profile = ml_tools.profile_dataset(
             train, test or None, target=target or None, id_column=idc or None,
-            na_means_absent=na_absent,
+            na_means_absent=na_absent, high_missing=high_missing,
         )
         return {
             "data_quality_report": ml_tools.quality_report_from_profile(
                 profile, target=target, na_means_absent=na_absent,
+                high_missing=high_missing,
             ),
         }
 

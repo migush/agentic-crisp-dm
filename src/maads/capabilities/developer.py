@@ -77,7 +77,7 @@ def _primary_text_column(feature_hints: dict) -> str:
 
 
 def _is_text_modeling_case(state: CrispDMState) -> bool:
-    return bool(_primary_text_column(state.config.feature_hints or {}))
+    return ml_tools.is_nlp_primary(state.config.feature_hints or {})
 
 
 def _deterministic_submission_fallback(

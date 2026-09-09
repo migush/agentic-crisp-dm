@@ -16,5 +16,5 @@ Deterministic profiling owns measured facts. Agents interpret; they do not inven
 ## Quality (2.4)
 
 - `blockers`: missing target, constant predictors, duplicate IDs, undocumented ≥60% missingness
-- `tolerable`: columns in `na_means_absent`, mild missingness
-- Never mark `na_means_absent` columns as blockers
+- `tolerable`: columns in `na_means_absent` or `high_missing`, mild missingness
+- Never mark `na_means_absent` or `high_missing` columns as blockers

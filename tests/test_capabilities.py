@@ -129,10 +129,93 @@ def test_train_schema_context_notes_absent_id(tmp_path):
 
 
 def test_text_modeling_hint_for_text_cases(state):
-    state.config.feature_hints = {"text_free": ["text"]}
+    state.config.feature_hints = {"text_free": ["body"]}
     hint = _text_modeling_hint(state)
     assert "tfidf_logreg" in hint
     assert "ml_tools" in hint
+
+
+def test_text_modeling_hint_skipped_for_mixed_tabular_and_text(state):
+    state.config.feature_hints = {
+        "categorical": ["cat_a"],
+        "numeric_with_missing": ["num_a"],
+        "text_free": ["notes"],
+    }
+    assert _text_modeling_hint(state) == ""
+
+
+def test_baseline_techniques_mixed_tabular_and_text_uses_classification_ladder():
+    from maads.capabilities.ml_tools import baseline_techniques_for
+
+    techniques = baseline_techniques_for(
+        problem_type="binary_classification",
+        feature_hints={
+            "categorical": ["cat_a"],
+            "numeric_with_missing": ["num_a"],
+            "text_free": ["notes", "id_text"],
+        },
+    )
+    assert techniques[0] == "logistic_regression"
+    assert "tfidf_logreg" not in techniques
+
+
+def test_baseline_techniques_text_only_uses_tfidf():
+    from maads.capabilities.ml_tools import baseline_techniques_for
+
+    techniques = baseline_techniques_for(
+        problem_type="binary_classification",
+        feature_hints={"text_free": ["body"]},
+    )
+    assert techniques[0] == "tfidf_logreg"
+
+
+def test_baseline_techniques_representation_options_win():
+    from maads.capabilities.ml_tools import baseline_techniques_for
+
+    techniques = baseline_techniques_for(
+        problem_type="binary_classification",
+        feature_hints={
+            "text_free": ["body"],
+            "representation_options": ["tfidf_logreg", "openai_embeddings_logreg"],
+        },
+    )
+    assert techniques[0] == "tfidf_logreg"
+
+
+def test_quality_report_documented_high_missing_is_tolerable():
+    from maads.capabilities.ml_tools import quality_report_from_profile
+
+    profile = {
+        "n_rows": 100,
+        "columns": ["label", "sparse_cat", "mild_num"],
+        "missing": {"sparse_cat": 70, "mild_num": 10},
+        "constant_columns": [],
+        "duplicate_id_count": 0,
+        "target": {"name": "label", "missing": 0},
+    }
+    report = quality_report_from_profile(
+        profile,
+        target="label",
+        high_missing=["sparse_cat"],
+    )
+    assert not any("sparse_cat" in b for b in report["blockers"])
+    assert any("sparse_cat" in t for t in report["tolerable"])
+    assert any("mild_num" in t for t in report["tolerable"])
+
+
+def test_quality_report_undocumented_high_missing_is_blocker():
+    from maads.capabilities.ml_tools import quality_report_from_profile
+
+    profile = {
+        "n_rows": 100,
+        "columns": ["label", "sparse_cat"],
+        "missing": {"sparse_cat": 70},
+        "constant_columns": [],
+        "duplicate_id_count": 0,
+        "target": {"name": "label", "missing": 0},
+    }
+    report = quality_report_from_profile(profile, target="label")
+    assert any("sparse_cat" in b for b in report["blockers"])
 
 
 def test_select_best_model_minimizes_rmse():

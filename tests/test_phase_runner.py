@@ -17,6 +17,7 @@ from maads.flow.phase_runner import (
     force_halt,
     handle_plan,
     loop_block_reason,
+    resolve_loop_back,
     resolve_plan,
     run_substep,
 )
@@ -119,14 +120,53 @@ def test_loop_block_reason_inner_cap(titanic_state: CrispDMState, tmp_path: Path
     assert loop_block_reason(ctx, plan) == "inner Loop B budget exhausted"
 
 
-def test_handle_plan_halts_on_blocked_loop(titanic_state: CrispDMState, tmp_path: Path):
+def test_handle_plan_advances_on_blocked_loop(titanic_state: CrispDMState, tmp_path: Path):
     ctx = _ctx(titanic_state, tmp_path)
     ctx.inner_loop_count = 3
     plan = Plan(action="loop_back", loop_to_phase=3, loop_label="B", reason="retry prep")
     route = handle_plan(ctx, plan)
-    assert route == "halt"
-    assert titanic_state.halted
-    assert "recovery budget exhausted" in (titanic_state.halt_reason or "")
+    assert route is None
+    assert not titanic_state.halted
+    assert any("loop blocked" in e.message for e in titanic_state.log)
+    assert any("advancing instead" in e.message for e in titanic_state.log)
+
+
+def test_handle_plan_ignores_loop_c_at_5_1(titanic_state: CrispDMState, tmp_path: Path):
+    ctx = _ctx(titanic_state, tmp_path)
+    titanic_state.phase = Phase.EVALUATION
+    titanic_state.substep = "5.1"
+    plan = Plan(
+        action="loop_back",
+        loop_to_phase=1,
+        loop_label="C",
+        target_substep="1.3",
+        reason="stale business_goal_met",
+    )
+    assert resolve_loop_back(ctx, plan) == "continue"
+    assert titanic_state.phase == Phase.EVALUATION
+    assert not titanic_state.loop_history
+    assert any("premature Loop C" in e.message for e in titanic_state.log)
+
+
+def test_handle_plan_advances_when_phase_1_visit_cap_blocks_loop_c(
+    titanic_state: CrispDMState, tmp_path: Path,
+):
+    ctx = _ctx(titanic_state, tmp_path)
+    ctx.phase_visits[1] = 3
+    titanic_state.phase = Phase.EVALUATION
+    titanic_state.substep = "5.2"
+    plan = Plan(
+        action="loop_back",
+        loop_to_phase=1,
+        loop_label="C",
+        target_substep="1.3",
+        reason="business goal not met",
+    )
+    route = handle_plan(ctx, plan)
+    assert route is None
+    assert not titanic_state.halted
+    assert not titanic_state.loop_history
+    assert any("phase 1 visit cap exhausted" in e.message for e in titanic_state.log)
 
 
 def test_completion_halt_reason_without_ml_success(titanic_state: CrispDMState):

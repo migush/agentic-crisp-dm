@@ -161,6 +161,8 @@ def apply_loop(
     ctx.state.substep = SUBSTEPS[Phase(target_phase)][0]
     ctx.phase_visits[target_phase] = ctx.phase_visits.get(target_phase, 0) + 1
     ctx.state.validator_findings = []
+    # Stale 5.1 assessment must not trigger Loop C at the next 5.1 checkpoint.
+    ctx.state.ev.assessment_of_dm_results = None
     ctx.state.append_log(
         log_source,
         f"loop {label} -> phase {target_phase}: {plan.reason}",
@@ -338,13 +340,10 @@ def handle_plan(
         force_halt(ctx.state, plan.reason or "PM halt")
         return "halt"
     if plan.action == "loop_back":
-        if plan.loop_to_phase and can_fire_loop(ctx, plan):
-            apply_loop(ctx, plan)
-            return loop_route_for_phase(int(plan.loop_to_phase))
-        reason = loop_block_reason(ctx, plan)
-        ctx.state.append_log("orchestrator", f"loop blocked by guard: {reason}", level="warn")
-        force_halt(ctx.state, f"recovery budget exhausted: {reason}")
-        return "halt"
+        route = resolve_loop_back(ctx, plan)
+        if route == "continue":
+            return None
+        return route
     if (
         plan.action == "advance"
         and plan.target_substep
@@ -368,6 +367,37 @@ def loop_route_for_phase(phase: int) -> str:
         5: "phase_5",
         6: "phase_6",
     }.get(phase, f"phase_{phase}")
+
+
+def resolve_loop_back(
+    ctx: RunContext,
+    plan: Plan,
+    *,
+    log_source: str = "orchestrator",
+) -> str:
+    """Apply ``loop_back`` or convert it to a continue.
+
+    Loop C is only legal at 5.2 (after Evaluate Results). A blocked loop means
+    stop iterating — finish the current phase so a submission can still be
+    produced — rather than halt with recovery-budget exhaustion.
+    """
+    if plan.loop_label == "C" and ctx.state.substep == "5.1":
+        ctx.state.append_log(
+            log_source,
+            "ignored premature Loop C at 5.1; Evaluate Results has not run this visit",
+            level="warn",
+        )
+        return "continue"
+    if plan.loop_to_phase and can_fire_loop(ctx, plan):
+        apply_loop(ctx, plan, log_source=log_source)
+        return loop_route_for_phase(int(plan.loop_to_phase))
+    reason = loop_block_reason(ctx, plan)
+    ctx.state.append_log(
+        log_source,
+        f"loop blocked by guard: {reason}; advancing instead of exhausting recovery",
+        level="warn",
+    )
+    return "continue"
 
 
 def run_phase_substeps(ctx: RunContext, phase: Phase) -> str | None:

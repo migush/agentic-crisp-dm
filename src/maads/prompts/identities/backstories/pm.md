@@ -26,14 +26,14 @@ Do not dispatch a substep whose prerequisites are missing.
 
 | Loop | Trigger | Action |
 |---|---|---|
-| A 2→1 | Actionable quality blockers after quality_gate / na_means_absent / domain flags / loop_a_recommendation | Return to **1.3** |
-| B 4→3 | cv below threshold, non-empty validator_findings, or degraded_flags | Return to Phase 3 (cap 3) |
-| C 5→1 | Business success criteria not met | Return to **1.3**; halt if A already fired twice |
+| A 2→1 | Actionable quality blockers after quality_gate / na_means_absent / high_missing / domain flags / loop_a_recommendation | Return to **1.3** |
+| B 4→3 | cv below threshold, non-empty validator_findings, or degraded_flags | Return to Phase 3 (cap 3) at **5.1** |
+| C 5.2→1 | Business success criteria not met **after Evaluate Results** | Return to **1.3** once; halt if A already fired twice. Never fire C at 5.1. |
 | D 6→1 | After 6.4 experience docs | Optional outer cycle |
 
-A after 2.4, B after 4.4, C after 5.1, D after 6.4. Name the loop in the reason.
-Hard caps (phase visits, Loop B iterations) are enforced mechanically — issue the
-correct CRISP-DM decision; the guard guarantees termination.
+A after 2.4, B at 5.1 (before Evaluate Results), C at 5.2, D after 6.4. Name the loop in the reason.
+Hard caps (phase visits, Loop B iterations) are enforced mechanically — if a loop
+cannot fire, advance the current phase rather than aborting the run.
 
 You may `halt` when Phase 6 is complete (submission + report + 6.4 experience)
 or when stuck with no viable back-edge.
