@@ -340,38 +340,21 @@ def test_run_json_task_still_raises_when_debug_stuck(
         run_json_task("pm", "decide", state, artifact_dir=artifact_dir)
 
 
-def test_de_32_debug_without_baseline_fallback(
+def test_de_32_uses_deterministic_clean_without_authored_debug(
     monkeypatch: pytest.MonkeyPatch,
     pyexec: PythonExec,
     state: CrispDMState,
     artifact_dir: Path,
 ):
-    """DE 3.2 routes to Developer DEBUG when specialist code fails; no baseline fallback."""
+    """DE 3.2 runs deterministic clean_tables — no authored-code / DEBUG path."""
     from maads.agents import DataEngineerAgent
 
     calls: list[str] = []
 
     def fake_text(agent_name, *_a, **_k):
         calls.append(agent_name)
-        if agent_name == "developer":
-            # The fix must write a real train parquet that PRESERVES the target,
-            # otherwise the 3.2 contract's target_preserved check rejects it.
-            return (
-                "```python\n"
-                "import json, os\n"
-                "import pandas as pd\n"
-                "os.makedirs(OUTDIR, exist_ok=True)\n"
-                "tp = os.path.join(OUTDIR, 'train_clean.parquet')\n"
-                "sp = os.path.join(OUTDIR, 'test_clean.parquet')\n"
-                "pd.DataFrame({TARGET: [0, 1], 'Age': [22, 38]}).to_parquet(tp)\n"
-                "pd.DataFrame({'Age': [22, 38]}).to_parquet(sp)\n"
-                'print(json.dumps({"train_out": tp, "test_out": sp, '
-                '"missing_before": {}, "missing_after": {}}))\n'
-                "```"
-            )
-        return "```python\nraise RuntimeError('de fail')\n```"
+        return "```python\nraise RuntimeError('should not author code')\n```"
 
-    monkeypatch.setattr("maads.crew.run_text_task", fake_text)
     monkeypatch.setattr("maads.crew.run_text_task", fake_text)
 
     def fake_json_task(_agent, _instruction, st, *_a, **_k):
@@ -385,7 +368,9 @@ def test_de_32_debug_without_baseline_fallback(
     from maads.state import Phase
     state.phase = Phase.DATA_PREPARATION
     state.substep = "3.2"
-    agent.act(state)
-    assert "developer" in calls
+    delta = agent.act(state)
+    assert not delta.failed
+    assert calls == []  # execution_authoritative skips LLM
     assert state.dp.data_cleaning_report
-    assert not any("baseline fallback" in f for f in state.degraded_flags)
+    assert state.dp.data_cleaning_report.get("source", "").startswith("deterministic")
+    assert not state.degraded_flags

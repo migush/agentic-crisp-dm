@@ -6,101 +6,25 @@ from pathlib import Path
 
 import pandas as pd
 
+from maads.capabilities import ml_tools
+from maads.capabilities.shared import abspath as _abspath, has_keys as _has_keys, record_degraded
 from maads.codegen import run_authored_code
-from maads.capabilities.data_scientist import _TEXT_HEADER_HELPERS
-from maads.capabilities.shared import abspath as _abspath, has_keys as _has_keys
 from maads.deltas import StateDelta
 from maads.knowledge_setup import append_experience_to_knowledge
 from maads.state import CrispDMState
 from maads.tools import FileIO, PythonExec
 
 _SUBMISSION_INSTRUCTION = (
-    "CRISP-DM 6.1 Build Submission: refit the chosen model approach on the full "
-    "training set, generate predictions for the prepared test set, and write "
-    "OUTPUT_PATH. When SAMPLE_SUBMISSION is a real file, load it as the "
-    "authoritative schema template — column names, dtypes, and row count must "
-    "match exactly before writing. When SAMPLE_SUBMISSION is empty, invent a "
-    "schema (typically ID_COL plus TARGET or a prediction column) and own that "
-    "schema. "
-    "Parse CHOSEN_MODEL with load_chosen_model() (or json.loads when it is a string) "
-    "in code (pipelines are not persisted from Phase 4). Respect PROBLEM_TYPE and "
-    "EVAL_METRIC (e.g. log-transform the target when the metric name contains 'log'). "
-    "Classification labels may be strings or integers of any cardinality — encode "
-    "for fitting and inverse-transform for the submission when needed. "
-    "When TEXT_COLUMN is non-empty, treat this as NLP-primary and use that column "
-    "as the main feature (parse FEATURE_HINTS for weak categoricals if needed). "
-    "Join predictions to ID_COL from the test records; never reorder or drop rows. "
+    "CRISP-DM 6.1 Build Submission: prefer loading CHOSEN_MODEL.artifact_path when "
+    "present. Otherwise refit the chosen model on the full training set, generate "
+    "predictions for the prepared test set, and write OUTPUT_PATH. When "
+    "SAMPLE_SUBMISSION is a real file, load it as the authoritative schema template "
+    "— column names, dtypes, and row count must match exactly before writing. When "
+    "SAMPLE_SUBMISSION is empty, invent a schema (typically ID_COL plus TARGET). "
+    "Parse CHOSEN_MODEL with load_chosen_model() when no artifact exists. Respect "
+    "PROBLEM_TYPE and EVAL_METRIC. Join predictions to ID_COL; never reorder rows. "
     "Never treat the sample submission as ground-truth labels."
 )
-
-_TEXT_SUBMISSION_BASELINE = """
-import json
-import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-
-train = pd.read_parquet(TRAIN_PARQUET)
-test = pd.read_parquet(TEST_PARQUET)
-X_train = drop_feature_columns(train)
-y, class_values, label_encoder = classification_target_values(train[TARGET])
-n_classes = len(set(y.tolist()))
-X_test = drop_feature_columns(test)
-primary_text = PRIMARY_TEXT_COL if PRIMARY_TEXT_COL in X_train.columns else None
-text_cols = [
-    c for c in X_train.columns
-    if str(X_train[c].dtype) == "object" or str(X_train[c].dtype).startswith("string")
-]
-if not primary_text:
-    primary_text = next((c for c in text_cols if c == "text"), None)
-if not primary_text and TEXT_COLUMN and TEXT_COLUMN in X_train.columns:
-    primary_text = TEXT_COLUMN
-if not primary_text and text_cols:
-    primary_text = text_cols[0]
-num_cols = X_train.select_dtypes(include="number").columns.tolist()
-transformers = []
-if primary_text:
-    transformers.append((
-        primary_text,
-        text_vectorizer_pipeline(ngram_range=(1, 2), max_features=50000, min_df=2),
-        [primary_text],
-    ))
-if num_cols:
-    transformers.append((
-        "num",
-        Pipeline([("imp", SimpleImputer(strategy="median")), ("sc", StandardScaler())]),
-        num_cols,
-    ))
-pre = ColumnTransformer(transformers, remainder="drop")
-clf = LogisticRegression(max_iter=2000, solver=logistic_solver_for(n_classes), class_weight="balanced", random_state=42)
-pipe = Pipeline([("pre", pre), ("clf", clf)])
-pipe.fit(X_train, y)
-encoded_preds = pipe.predict(X_test)
-if label_encoder is not None:
-    preds = label_encoder.inverse_transform(encoded_preds)
-else:
-    preds = encoded_preds
-if SAMPLE_SUBMISSION:
-    sample = pd.read_csv(SAMPLE_SUBMISSION)
-    idc = ID_COL if ID_COL in sample.columns else sample.columns[0]
-    target_col = TARGET if TARGET in sample.columns else sample.columns[1]
-    if ID_COL in test.columns:
-        sub = pd.DataFrame({idc: test[ID_COL].values, target_col: preds})
-    else:
-        sub = pd.DataFrame({idc: sample[idc].values, target_col: preds})
-    sub = sub.reindex(columns=list(sample.columns))
-    assert list(sub.columns) == list(sample.columns)
-    assert len(sub) == len(sample)
-else:
-    idc = ID_COL if ID_COL in test.columns else (test.columns[0] if len(test.columns) else "id")
-    target_col = TARGET or "prediction"
-    ids = test[idc].values if idc in test.columns else range(len(preds))
-    sub = pd.DataFrame({idc: ids, target_col: preds})
-sub.to_csv(OUTPUT_PATH, index=False)
-print(json.dumps({"submission_path": OUTPUT_PATH, "rows": int(len(sub))}))
-"""
 
 _DEVELOPER_HEADER_HELPERS = """
 def load_chosen_model():
@@ -156,18 +80,43 @@ def _is_text_modeling_case(state: CrispDMState) -> bool:
     return bool(_primary_text_column(state.config.feature_hints or {}))
 
 
-def _run_text_submission_baseline(pyexec: PythonExec, header_vars: dict[str, str]) -> dict:
-    from maads.capabilities.data_scientist import _TEXT_HEADER_HELPERS
-    from maads.codegen import _header, _last_json_line
-
-    header = _header(header_vars, helpers=_TEXT_HEADER_HELPERS)
-    res = pyexec.run(header + _TEXT_SUBMISSION_BASELINE, label="developer_61_text_fallback")
-    if not res.ok:
-        raise RuntimeError((res.stderr or "text submission baseline failed").strip()[-500:])
-    payload = _last_json_line(res.stdout)
-    if not payload:
-        raise RuntimeError("text submission baseline printed no JSON")
-    return payload
+def _deterministic_submission_fallback(
+    state: CrispDMState,
+    *,
+    train_parquet: str,
+    test_parquet: str,
+    sample: str,
+    output_path: str,
+    artifact_dir: Path,
+) -> dict:
+    technique = (
+        state.md.chosen_model.technique
+        if state.md.chosen_model
+        else state.md.modeling_technique
+        or ("tfidf_logreg" if _is_text_modeling_case(state) else "logistic_regression")
+    )
+    run = ml_tools.run_experiment(
+        train_parquet,
+        technique=technique,
+        target=state.resolved_target(),
+        id_column=state.config.id_column,
+        metric=state.config.evaluation_metric,
+        problem_type=state.config.problem_type,
+        feature_hints=state.config.feature_hints or {},
+        artifact_dir=artifact_dir,
+    )
+    artifact = run.get("artifact_path")
+    if not artifact:
+        raise RuntimeError("deterministic submission fallback produced no artifact")
+    return ml_tools.predict_from_artifact(
+        artifact,
+        train_parquet=train_parquet,
+        test_parquet=test_parquet,
+        sample_submission=sample,
+        output_path=output_path,
+        target=state.resolved_target(),
+        id_column=state.config.id_column,
+    )
 
 
 def build_submission(
@@ -185,7 +134,54 @@ def build_submission(
     chosen = state.md.chosen_model.model_dump() if state.md.chosen_model else {}
     feature_hints = state.config.feature_hints or {}
     text_col = _primary_text_column(feature_hints)
-    text_case = _is_text_modeling_case(state)
+    contract = _submission_contract(sample)
+
+    artifact_path = None
+    if state.md.chosen_model:
+        artifact_path = state.md.chosen_model.artifact_path or (
+            (state.md.chosen_model.parameter_settings or {}).get("artifact_path")
+        )
+    if artifact_path and Path(str(artifact_path)).is_file():
+        payload = ml_tools.predict_from_artifact(
+            str(artifact_path),
+            train_parquet=dataset_train,
+            test_parquet=dataset_test,
+            sample_submission=sample,
+            output_path=out,
+            target=state.resolved_target(),
+            id_column=state.config.id_column,
+        )
+        errors = contract(payload)
+        if not errors:
+            state.dep.submission_path = payload["submission_path"]
+            state.dep.deployment_plan = (
+                f"Loaded exact artifact {artifact_path} "
+                f"({chosen.get('technique', 'chosen model')}); validated against sample."
+            )
+            return StateDelta(["dep.submission_path", "dep.deployment_plan"])
+        record_degraded(state, "6.1", "developer", f"artifact submission invalid: {errors[0]}")
+
+    try:
+        payload = _deterministic_submission_fallback(
+            state,
+            train_parquet=dataset_train,
+            test_parquet=dataset_test,
+            sample=sample,
+            output_path=out,
+            artifact_dir=artifact_dir,
+        )
+        errors = contract(payload)
+        if not errors:
+            state.dep.submission_path = payload["submission_path"]
+            state.dep.deployment_plan = (
+                f"Deterministic baseline submission "
+                f"({chosen.get('technique', 'chosen model')}); validated against sample."
+            )
+            return StateDelta(["dep.submission_path", "dep.deployment_plan"])
+        record_degraded(state, "6.1", "developer", f"deterministic submission invalid: {errors[0]}")
+    except Exception as exc:  # noqa: BLE001
+        record_degraded(state, "6.1", "developer", f"deterministic submission failed: {exc}")
+
     header_vars = {
         "TRAIN_PARQUET": dataset_train,
         "TEST_PARQUET": dataset_test,
@@ -201,27 +197,25 @@ def build_submission(
         "PRIMARY_TEXT_COL": text_col or "text",
     }
 
-    def _text_fallback() -> dict:
-        return _run_text_submission_baseline(pyexec, header_vars)
-
     res = run_authored_code(
         pyexec=pyexec,
         agent_name="developer",
         state=state,
         instruction=_SUBMISSION_INSTRUCTION,
         header_vars=header_vars,
-        header_helpers=(
-            (_TEXT_HEADER_HELPERS + "\n" + _DEVELOPER_HEADER_HELPERS) if text_case else _DEVELOPER_HEADER_HELPERS
-        ),
-        fallback=_text_fallback if text_case else None,
-        fallback_code="text_tfidf_logreg_submission_baseline",
-        contract=_submission_contract(sample),
+        header_helpers=_DEVELOPER_HEADER_HELPERS,
+        contract=contract,
         contract_hint=(
             "Required keys: submission_path (str, absolute path to written CSV), "
             "rows (int, must match file and sample submission row count)."
         ),
         artifact_dir=artifact_dir,
     )
+    if res.degraded:
+        record_degraded(
+            state, "6.1", "developer",
+            res.error or "authored submission fell back to baseline",
+        )
 
     state.dep.submission_path = res.payload["submission_path"]
     state.dep.deployment_plan = (
@@ -239,6 +233,7 @@ def plan_monitoring(state: CrispDMState) -> StateDelta:
 def experience_review(state: CrispDMState) -> StateDelta:
     loops = [le.label for le in state.loop_history]
     deg = state.degraded_flags
+    artifact = state.md.chosen_model.artifact_path if state.md.chosen_model else "n/a"
     experience = (
         f"# Experience — {state.case_id}\n\n"
         f"- Loops fired: {loops or 'none'}\n"
@@ -246,6 +241,7 @@ def experience_review(state: CrispDMState) -> StateDelta:
         f"- Chosen model: "
         f"{state.md.chosen_model.technique if state.md.chosen_model else 'n/a'}\n"
         f"- CV: {state.md.chosen_model.cv_score if state.md.chosen_model else 'n/a'}\n"
+        f"- Artifact: {artifact}\n"
     )
     state.dep.experience_documentation = experience
     append_experience_to_knowledge(state.case_id, experience)

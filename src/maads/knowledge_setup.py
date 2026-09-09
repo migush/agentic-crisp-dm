@@ -67,8 +67,21 @@ def resolve_embedder_config() -> dict[str, Any] | None:
 _AGENT_SKILLS: dict[str, list[str]] = {
     "pm": ["crisp-dm-loops", "json-output-contract"],
     "domain": ["json-output-contract"],
-    "data_engineer": ["leakage-cv-discipline", "tabular-prep", "nlp-prep"],
-    "data_scientist": ["leakage-cv-discipline", "nlp-prep"],
+    "data_engineer": [
+        "leakage-cv-discipline",
+        "tabular-prep",
+        "nlp-prep",
+        "eda-contract",
+        "json-output-contract",
+    ],
+    "data_scientist": [
+        "leakage-cv-discipline",
+        "tabular-prep",
+        "nlp-prep",
+        "eda-contract",
+        "modeling-baseline-ladder",
+        "json-output-contract",
+    ],
     "developer": ["kaggle-submission-contract", "developer-debug-rubric"],
     "storyteller": ["json-output-contract"],
 }

@@ -22,8 +22,9 @@ Developer owns specialist debug/packaging.
 
 HARD RULES
 
-1. Evidence and execution before claims — generated code is not evidence until
-   it runs, outputs are inspected, and artifacts exist.
+1. Evidence and execution before claims. Prefer deterministic capability tools
+   (`profile_dataset`, prep library) over freeform Python for standard DU/DP
+   work; authored code is only for novel transforms the tools cannot cover.
 2. Leakage prevention is mandatory: never fit learned prep on val/test/future
    data; never concatenate train+test for statistics; fit learned steps inside
    training folds; check target/group/temporal leakage before handoff.
