@@ -534,6 +534,30 @@ def test_measure_prep_artifacts_missing_source_train(tmp_path):
     assert "source train missing" in out["data_cleaning_report"]["source"]
 
 
+def test_measure_prep_artifacts_non_utf8_source_train(tmp_path):
+    from maads.capabilities.shared import measure_prep_artifacts
+
+    train_csv = tmp_path / "train.csv"
+    # 0x92 is a curly apostrophe in cp1252/latin-1 but an invalid UTF-8
+    # continuation byte on its own -- exactly the byte that broke task-29.
+    train_csv.write_bytes(b"a,y\nit\x92s fine,0\n")
+    train_pq = tmp_path / "train.parquet"
+    test_pq = tmp_path / "test.parquet"
+    pd.DataFrame({"a": ["it’s fine"], "y": [0]}).to_parquet(train_pq)
+    pd.DataFrame({"a": ["x"]}).to_parquet(test_pq)
+
+    out = measure_prep_artifacts(
+        source_train=str(train_csv),
+        source_test="",
+        train_parquet=str(train_pq),
+        test_parquet=str(test_pq),
+        target="y",
+        payload_derived=[],
+        payload_dropped=[],
+    )
+    assert out["merged_data"]["train_rows"] == 1
+
+
 def test_codegen_instruction_forbids_filesystem_search():
     from maads.codegen import _build_instruction
 

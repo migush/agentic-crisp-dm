@@ -221,9 +221,11 @@ def measure_prep_artifacts(
 ) -> dict[str, Any]:
     import pandas as pd
 
+    from maads.schema_inference import read_csv as _read_csv_any_encoding
+
     src_train_path = Path(source_train) if source_train else None
     if src_train_path is not None and src_train_path.is_file():
-        src_tr = pd.read_csv(src_train_path)
+        src_tr = _read_csv_any_encoding(src_train_path)
     else:
         src_tr = pd.DataFrame()
     prep_tr = pd.read_parquet(train_parquet)
