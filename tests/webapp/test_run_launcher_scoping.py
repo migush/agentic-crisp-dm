@@ -50,7 +50,7 @@ def test_run_uses_the_launching_users_artifact_root(db_path, tmp_path, monkeypat
         captured["cmd"] = cmd
         return subprocess.CompletedProcess(cmd, returncode=0)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(run_launcher, "_run_subprocess", fake_run)
     root = tmp_path / "u7"
     monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: _mkdir(root))
 
@@ -76,7 +76,7 @@ def test_ollama_cloud_child_env_gets_key_and_cloud_host(db_path, tmp_path, monke
         captured["env"] = dict(kwargs.get("env") or {})
         return subprocess.CompletedProcess(cmd, returncode=0)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(run_launcher, "_run_subprocess", fake_run)
     monkeypatch.setenv("OPENAI_API_KEY", "parent-openai")
     monkeypatch.setenv("OLLAMA_API_KEY", "parent-ollama")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -106,7 +106,7 @@ def test_user_case_run_passes_config_not_case(db_path, tmp_path, monkeypatch):
         captured["cmd"] = cmd
         return subprocess.CompletedProcess(cmd, returncode=0)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(run_launcher, "_run_subprocess", fake_run)
     root = tmp_path / "u4"
     monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: _mkdir(root))
 
@@ -139,7 +139,7 @@ def test_completion_records_spend_from_the_real_run_layout(db_path, tmp_path, mo
             "total_output_tokens": 80,
         },
     )
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0))
+    monkeypatch.setattr(run_launcher, "_run_subprocess", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0))
     monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: root)
 
     make_user(db_path, 3)
@@ -162,6 +162,81 @@ def test_completion_records_spend_from_the_real_run_layout(db_path, tmp_path, mo
 
     by_agent = {row["agent"]: (row["input_tokens"], row["output_tokens"]) for row in events}
     assert by_agent == {"data_scientist": (240, 60), "developer": (80, 20)}
+
+
+def test_timeout_marks_failed_and_links_run_dir(db_path, tmp_path, monkeypatch):
+    root = tmp_path / "u8"
+    seed_finished_run(
+        _mkdir(root),
+        "disaster_tweets",
+        "timeout-run",
+        {"token_spend": {"data_engineer": 100}, "total_input_tokens": 80, "total_output_tokens": 20},
+    )
+    (root / "disaster_tweets" / "runs" / "timeout-run" / "status.json").write_text(
+        json.dumps({"halted": False, "activity": "LLM running"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WEBAPP_RUN_TIMEOUT_SEC", "3600")
+
+    def boom(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 3600))
+
+    monkeypatch.setattr(run_launcher, "_run_subprocess", boom)
+    monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: root)
+
+    make_user(db_path, 8)
+    task_id = run_launcher.create_task(8, "disaster_tweets", "openai", "gpt-5.5-pro")
+    run_launcher.run_task(
+        task_id, user_id=8, case_name="disaster_tweets", provider="openai",
+        model_id="gpt-5.5-pro", decrypted_api_key="sk-x",
+    )
+
+    with db_module.get_conn(db_path) as conn:
+        task = conn.execute(
+            "SELECT status, run_artifact_path FROM tasks WHERE id = ?", (task_id,),
+        ).fetchone()
+        events = conn.execute(
+            "SELECT agent FROM token_spend_events WHERE task_id = ?", (task_id,),
+        ).fetchall()
+
+    run_dir = root / "disaster_tweets" / "runs" / "timeout-run"
+    assert task["status"] == "failed"
+    assert task["run_artifact_path"] == str(run_dir)
+    assert [row["agent"] for row in events] == ["data_engineer"]
+    status = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+    assert status["halted"] is True
+    assert status["halt_reason"] == run_launcher.HOSTED_WALL_TIMEOUT_REASON
+
+
+def test_child_env_gets_in_flow_deadline(db_path, tmp_path, monkeypatch):
+    captured: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["env"] = dict(kwargs.get("env") or {})
+        return subprocess.CompletedProcess(cmd, returncode=0)
+
+    monkeypatch.setattr(run_launcher, "_run_subprocess", fake_run)
+    monkeypatch.setenv("WEBAPP_RUN_TIMEOUT_SEC", "3600")
+    root = tmp_path / "u2"
+    monkeypatch.setattr(paths_module, "user_artifact_root", lambda uid: _mkdir(root))
+
+    make_user(db_path, 2)
+    task_id = run_launcher.create_task(2, "titanic", "openai", "gpt-4o")
+    run_launcher.run_task(
+        task_id, user_id=2, case_name="titanic", provider="openai",
+        model_id="gpt-4o", decrypted_api_key="sk-x",
+    )
+
+    assert captured["env"]["MAADS_RUN_DEADLINE_SEC"] == "3300"
+
+
+def test_run_timeout_sec_reads_env(monkeypatch):
+    monkeypatch.delenv("WEBAPP_RUN_TIMEOUT_SEC", raising=False)
+    assert run_launcher.run_timeout_sec() == 3600
+    monkeypatch.setenv("WEBAPP_RUN_TIMEOUT_SEC", "90")
+    assert run_launcher.run_timeout_sec() == 90
+    assert run_launcher.child_deadline_sec(3600) == 3300
+    assert run_launcher.child_deadline_sec(60) == 30
 
 
 def _mkdir(path):

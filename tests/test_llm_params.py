@@ -49,7 +49,18 @@ def test_astra_allowlist_excludes_none() -> None:
 
 def test_role_defaults() -> None:
     assert role_default_effort("pm") == "medium"
-    assert role_default_effort("developer") == "high"
+    assert role_default_effort("developer") == "medium"
+    assert role_default_effort("data_engineer") == "medium"
+    assert role_default_effort("data_scientist") == "medium"
+
+
+def test_effort_allowlists_by_model_family() -> None:
+    assert "none" not in (allowed_reasoning_efforts("gpt-6-astra") or set())
+    gpt56 = allowed_reasoning_efforts("gpt-5.6-sol")
+    assert gpt56 is not None and "none" in gpt56
+    gpt55 = allowed_reasoning_efforts("gpt-5.5-pro")
+    assert gpt55 is not None and "medium" in gpt55
+    assert allowed_reasoning_efforts("ollama/gemma2:9b") is None
 
 
 def test_resolve_astra_sets_effort(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,7 +68,7 @@ def test_resolve_astra_sets_effort(monkeypatch: pytest.MonkeyPatch) -> None:
     pm = resolve_agent_llm_params("pm")
     dev = resolve_agent_llm_params("developer")
     assert pm.reasoning_effort == "medium"
-    assert dev.reasoning_effort == "high"
+    assert dev.reasoning_effort == "medium"
 
 
 def test_build_llm_sets_effort_for_astra(monkeypatch: pytest.MonkeyPatch) -> None:

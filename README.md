@@ -1,9 +1,9 @@
 # maads — Multi-Agent Automated Data Science
 
-A five-agent system that walks Kaggle-style problems through the **CRISP-DM 1.0**
+A six-agent system that walks Kaggle-style problems through the **CRISP-DM 1.0**
 process model. The **Project Manager** orchestrates each turn; specialist agents
-(domain, data engineer, data scientist, developer) own their substeps. CrewAI
-powers LLM calls; a typed shared state (`CrispDMState`) and trace tooling make
+(domain, data engineer, data scientist, developer, storyteller) own their substeps.
+CrewAI powers LLM calls; a typed shared state (`CrispDMState`) and trace tooling make
 runs observable.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the Flow graph and module layout.
@@ -17,8 +17,8 @@ artifacts/<case>/         Per-run outputs (submission, trace, final_state.json)
 src/maads/                Installable Python package (src layout)
   config/                 Canonical agents.yaml + tasks.yaml (CrewAI)
   flow/                   CrewAI Flow orchestration (CrispDMFlow)
-  crews/                  Phase-scoped @CrewBase crews (per-phase tasks.yaml)
-  agents.py               Five agent wrappers
+  crews/                  Thin per-role kickoff routers
+  agents.py               Six agent wrappers
   crew.py                 CrewAI LLM seam
   observability/          Trace export (timeline, narrative, diagrams)
 tests/                    Pytest suite (outside the installable package)
@@ -90,7 +90,7 @@ python -m maads dashboard --case titanic
 ```
 
 The dashboard binds to `127.0.0.1:8765` by default. It reads
-`artifacts/<case>/runs/<run_id>/` via the `current` symlink. If the UI shows
+`artifacts/<case>/runs/<run_id>/` via the `current` text run-id pointer. If the UI shows
 **No cases**, restart the dashboard after `maads run` starts, or check
 `http://127.0.0.1:8765/api/health` for the artifact root and detected cases.
 Interactive API docs: `http://127.0.0.1:8765/api/docs` (OpenAPI schema at `/api/openapi.json`).

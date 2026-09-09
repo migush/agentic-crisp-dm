@@ -12,7 +12,7 @@ There are **six** runtime agents (PM, Domain, Data Engineer, Data Scientist, Dev
 
 - Graph changes stay in `flow/crisp_dm_flow.py` using `@start` / `@listen` / `@router` / `or_` from `crewai.flow.flow`.
 - Loop caps and back-edges: read `skills/crisp-dm-loops/SKILL.md` then `phase_runner.py` + `routers.py`. Loop A = checkpoint 3.1 → `phase_1`; B = 5.1 → `phase_3`; C = 5.2 → `phase_1`. Loop D is not a hard flow edge.
-- Canonical personas: `src/maads/config/agents.yaml`. Phase crews use that path (`crews/paths.py`); per-crew `config/tasks.yaml` only.
+- Canonical personas: `src/maads/config/agents.yaml`. Task scaffolds: `src/maads/config/tasks.yaml` via `compile_task_payload`. Phase crews are thin kickoff routers (no per-crew `tasks.yaml`).
 - Kickoff is **one agent, one task** (`crews/kickoff.py` → `run_json_task`). Do not replace the hub-and-spoke Flow with a static multi-task sequential Crew.
 - Mutate state via mutators / `StateDelta` / capability `apply_*`. Prompts: `state.view_for(agent_name)`.
 

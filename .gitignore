@@ -257,3 +257,8 @@ atlas.local.toml
 # Per-run / per-session local files (do not commit)
 knowledge/
 workflow_state.md
+
+# One-off investigation dumps (keep locally; do not commit)
+docs/task20/
+docs/task20.zip
+docs/NLP_train_test/

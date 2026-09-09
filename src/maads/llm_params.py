@@ -19,9 +19,9 @@ _ROLE_DEFAULT_EFFORT: dict[str, str] = {
     "pm": "medium",
     "domain": "medium",
     "storyteller": "medium",
-    "data_engineer": "high",
-    "data_scientist": "high",
-    "developer": "high",
+    "data_engineer": "medium",
+    "data_scientist": "medium",
+    "developer": "medium",
 }
 
 _ASTRA_EFFORTS = frozenset({"low", "medium", "high", "xhigh"})

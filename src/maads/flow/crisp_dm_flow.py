@@ -14,6 +14,7 @@ from maads.agents import (
     StorytellerAgent,
 )
 from maads.outcome import completion_halt_reason
+from maads.run_deadline import start_deadline_clock
 from maads.flow import phase_runner as pr
 from maads.flow.routers import checkpoint_route
 from maads.flow.tracing import install_flow_run_tracer, trace_flow_method
@@ -56,6 +57,7 @@ class CrispDMFlow(Flow[CrispDMState]):
         return route
 
     def kickoff(self, inputs=None, **kwargs):  # type: ignore[override]
+        start_deadline_clock()
         coll = get_collector()
         tracer = install_flow_run_tracer()
         coll.emit_start(

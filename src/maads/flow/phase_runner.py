@@ -9,6 +9,7 @@ from maads.deltas import Plan
 from maads.flow.tracing import trace_substep_dispatch, trace_substep_end
 from maads.shutdown import INTERRUPT_HALT_REASON, shutdown_requested
 from maads.state import SUBSTEPS, SUBSTEP_OWNER, CrispDMState, Phase
+from maads.run_deadline import HALT_REASON as DEADLINE_HALT_REASON, deadline_exceeded
 from maads.token_budget import (
     HALT_REASON,
     TokenBudgetExceeded,
@@ -74,6 +75,8 @@ class RunContext:
 def check_global_halt(ctx: RunContext) -> str | None:
     if shutdown_requested():
         return INTERRUPT_HALT_REASON
+    if deadline_exceeded():
+        return DEADLINE_HALT_REASON
     if caps_exceeded(ctx):
         return "hard cap exceeded"
     if over_budget(ctx.state):

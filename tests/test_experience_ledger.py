@@ -24,7 +24,7 @@ def test_append_llm_param_experience(tmp_path: Path, monkeypatch) -> None:
     assert row["run_id"] == "abc"
     assert row["case_id"] == "titanic"
     assert row["reasoning_effort_by_agent"]["pm"] == "medium"
-    assert row["reasoning_effort_by_agent"]["developer"] == "high"
+    assert row["reasoning_effort_by_agent"]["developer"] == "medium"
     ledger = case_dir / "llm_param_ledger.jsonl"
     assert ledger.is_file()
     assert "abc" in ledger.read_text(encoding="utf-8")
