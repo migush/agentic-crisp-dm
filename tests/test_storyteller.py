@@ -12,6 +12,7 @@ from maads.paths import resolve_path
 from maads.reports.final_report import build_story_spec_from_bundle, render_final_report_md
 from maads.state import CrispDMState, EvaluationBundle, ModelRun
 from maads.output_contracts import minimal_storyteller_output, validate_agent_output
+from maads.prompts.identities.storyteller import format_storyteller_task
 
 
 @pytest.fixture
@@ -41,6 +42,15 @@ def state_with_bundle() -> CrispDMState:
 def test_storyteller_output_contract():
     payload = minimal_storyteller_output("6.2")
     assert not validate_agent_output("storyteller", payload, substep="6.2")
+
+
+def test_format_storyteller_task_includes_assignment_id(
+    state_with_bundle: CrispDMState, tmp_path: Path,
+):
+    state_with_bundle.substep = "6.2"
+    instruction, hint = format_storyteller_task(state_with_bundle, tmp_path)
+    assert '"assignment_id": "6.2"' in instruction
+    assert 'assignment_id must be exactly "6.2"' in hint
 
 
 def test_apply_response_writes_story_spec(state_with_bundle: CrispDMState, tmp_path: Path):

@@ -29,6 +29,21 @@ _SUBSTEP_ASSIGNMENTS: dict[str, dict] = {
 }
 
 
+def _assignment_for_substep(substep: str, state: CrispDMState) -> dict:
+    meta = _SUBSTEP_ASSIGNMENTS.get(substep, {})
+    return {
+        "assignment_id": substep,
+        "objective": meta.get("objective", f"Complete CRISP-DM substep {substep}"),
+        "crisp_dm_phase": substep.split(".")[0] if "." in substep else substep,
+        "crisp_dm_substeps": [substep],
+        "requested_outputs": meta.get("requested_outputs", []),
+        "completion_criteria": meta.get("completion_criteria", []),
+        "constraints": meta.get("constraints", []),
+        "substep_name": SUBSTEP_NAMES.get(substep, "?"),
+        "case_id": state.case_id,
+    }
+
+
 def format_storyteller_task(
     state: CrispDMState,
     artifact_dir: Path,
@@ -36,17 +51,20 @@ def format_storyteller_task(
     execution_evidence: dict | None = None,
 ) -> tuple[str, str]:
     substep = state.substep
-    assignment = _SUBSTEP_ASSIGNMENTS.get(substep, {})
-    view = state.view_for("storyteller")
+    assignment = _assignment_for_substep(substep, state)
+    inputs: dict = {"artifact_directory": str(artifact_dir.resolve())}
     if execution_evidence:
-        view["execution_evidence"] = execution_evidence
+        inputs["execution_evidence"] = execution_evidence
+    runtime_input = {
+        "assignment": assignment,
+        "inputs": inputs,
+    }
     instruction = (
-        f"CRISP-DM {substep} ({SUBSTEP_NAMES.get(substep, substep)}): "
-        f"{assignment.get('objective', 'Complete storyteller substep')}. "
-        f"Requested outputs: {assignment.get('requested_outputs', [])}. "
-        f"Completion criteria: {assignment.get('completion_criteria', [])}. "
-        f"Constraints: {assignment.get('constraints', [])}. "
-        f"Artifact directory: {artifact_dir}."
+        "Complete the assigned CRISP-DM substep using the runtime input below. "
+        "assignment_id must be exactly the CRISP-DM substep id in assignment "
+        f"(currently '{substep}'), not a run-id or agent-qualified composite. "
+        "Return exactly one JSON object matching the output schema in your instructions.\n\n"
+        f"Runtime input:\n{json.dumps(runtime_input, indent=2, default=str)}"
     )
     if substep == "6.2":
         instruction += (

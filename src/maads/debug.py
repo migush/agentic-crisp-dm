@@ -277,7 +277,9 @@ def debug_json_parse(
                 repair_kind=repair_kind,
                 diagnosis={"error_class": failure_kind, "root_cause": "no parseable JSON"},
             )
-        normalize_agent_output(requesting_agent, payload)
+        normalize_agent_output(
+            requesting_agent, payload, substep=state.substep,
+        )
         errors = validate_agent_output(
             requesting_agent, payload, substep=state.substep, normalize=False,
         )

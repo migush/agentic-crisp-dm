@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from maads.output_contracts import (
     normalize_agent_output,
+    schema_hint_for_agent,
     validate_agent_output,
     _minimal_de_response,
     minimal_data_scientist_output,
+    minimal_storyteller_output,
 )
 
 
@@ -94,8 +96,41 @@ def test_validate_rejects_debug_wrapper_comm_0010():
     assert wrapper["assumptions"] == []
 
 
-def test_validate_rejects_wrong_assignment_id():
+def test_validate_coerces_wrong_assignment_id_to_substep():
+    payload = _minimal_de_response(substep="2.4")
+    payload["assignment_id"] = "run-xyz:2.4:data_engineer"
+    errors = validate_agent_output("data_engineer", payload, substep="2.4")
+    assert errors == []
+    assert payload["assignment_id"] == "2.4"
+
+
+def test_validate_reports_wrong_assignment_id_when_normalize_disabled():
     payload = _minimal_de_response(substep="2.4")
     payload["assignment_id"] = "2.2"
-    errors = validate_agent_output("data_engineer", payload, substep="2.4")
+    errors = validate_agent_output(
+        "data_engineer", payload, substep="2.4", normalize=False,
+    )
     assert any("assignment_id" in e for e in errors)
+    assert payload["assignment_id"] == "2.2"
+
+
+def test_normalize_leaves_debug_assignment_id_for_wrapper_check():
+    payload = _minimal_de_response(substep="2.4")
+    payload["assignment_id"] = "debug-2.4"
+    normalize_agent_output("data_engineer", payload, substep="2.4")
+    assert payload["assignment_id"] == "debug-2.4"
+
+
+def test_validate_coerces_storyteller_assignment_id():
+    payload = minimal_storyteller_output("6.2")
+    payload["assignment_id"] = "abc:6.2:storyteller"
+    errors = validate_agent_output("storyteller", payload, substep="6.2")
+    assert errors == []
+    assert payload["assignment_id"] == "6.2"
+
+
+def test_schema_hint_states_exact_assignment_id():
+    hint = schema_hint_for_agent("storyteller", substep="6.2")
+    assert 'assignment_id must be exactly "6.2"' in hint
+    hint_de = schema_hint_for_agent("data_engineer", substep="3.1")
+    assert 'assignment_id must be exactly "3.1"' in hint_de

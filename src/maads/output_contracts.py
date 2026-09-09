@@ -59,6 +59,8 @@ _DICT_LIST_FIELDS = frozenset({
 
 _SCHEMA_SHAPE_NOTES = """
 Shape rules for specialist agent output:
+- assignment_id must be exactly the CRISP-DM substep id (e.g. "6.2"), never a
+  run-id, agent name, or "run:substep:agent" composite.
 - assumptions, risks, blockers, handoffs, evidence, decisions: arrays of OBJECTS
   (e.g. [{"statement": "..."}]), NOT bare strings.
 - Put plain-text modeling assumptions in state_updates.md.modeling_assumptions
@@ -315,10 +317,20 @@ def _coerce_dict_list(value: Any) -> list[dict[str, Any]]:
     return [_coerce_dict_list_item(item) for item in value]
 
 
-def normalize_agent_output(agent_name: str, data: dict[str, Any]) -> dict[str, Any]:
+def normalize_agent_output(
+    agent_name: str,
+    data: dict[str, Any],
+    *,
+    substep: str | None = None,
+) -> dict[str, Any]:
     """Apply deterministic shape fixes in place before validation (idempotent)."""
     if agent_name not in _SPECIALIST_AGENTS and agent_name != "developer":
         return data
+
+    if substep and agent_name in _SPECIALIST_AGENTS:
+        aid = str(data.get("assignment_id") or "")
+        if not aid.startswith("debug-"):
+            data["assignment_id"] = substep
 
     array_fields = list(_ARRAY_FIELDS_SPECIALIST)
     if agent_name == "data_scientist":
@@ -450,7 +462,7 @@ def validate_agent_output(
         return ["output is not a JSON object"]
 
     if normalize:
-        normalize_agent_output(agent_name, data)
+        normalize_agent_output(agent_name, data, substep=substep)
 
     errors = _check_debug_wrapper(data, agent_name)
     errors.extend(_check_state_updates(data))
@@ -706,6 +718,11 @@ def schema_hint_for_agent(agent_name: str, *, substep: str | None = None) -> str
     parts = [_compact_model_shape(model)]
     if agent_name in _SPECIALIST_AGENTS:
         parts.append(_SCHEMA_SHAPE_NOTES.strip())
+        if substep:
+            parts.append(
+                f'assignment_id must be exactly "{substep}" '
+                "(the current CRISP-DM substep id)."
+            )
         example = _SUBSTEP_SCHEMA_EXAMPLES.get((agent_name, substep or ""))
         if example:
             parts.append(example)
