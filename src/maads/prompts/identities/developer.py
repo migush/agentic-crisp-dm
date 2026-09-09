@@ -152,7 +152,7 @@ def format_developer_debug_task(
             "(mode, diagnosis, status=FIXED). List fields must be JSON arrays [], "
             "never empty strings. state_updates must be an object."
             f"{schema_fix} "
-            "Your response must begin with '{{' and end with '}}'. "
+            "Your response must begin with '{' and end with '}'. "
             "Do not include markdown wraps."
         )
     return (

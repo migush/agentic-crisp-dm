@@ -19,7 +19,12 @@ from maads.debug import (
 from maads.paths import resolve_path
 from maads.state import CrispDMState
 from maads.tools import ExecResult, PythonExec
-from maads.output_contracts import _minimal_de_response, minimal_data_scientist_output
+from maads.output_contracts import (
+    _minimal_de_response,
+    minimal_data_scientist_output,
+    minimal_storyteller_output,
+)
+from maads.prompts.identities.developer import format_developer_debug_task
 
 
 @pytest.fixture(autouse=True)
@@ -83,6 +88,57 @@ def test_debug_json_parse_normalizes_schema_without_developer_llm(
     assert outcome.repair_kind == "deterministic_schema"
     assert outcome.payload is not None
     assert outcome.payload["assumptions"][0]["statement"] == "Plain string assumption"
+
+
+def test_debug_json_parse_coerces_assignment_id_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    state: CrispDMState,
+    artifact_dir: Path,
+):
+    state.substep = "2.4"
+
+    def _no_llm(*_a, **_k):
+        raise AssertionError("developer LLM must not run for assignment_id coerce")
+
+    monkeypatch.setattr("maads.crew.run_text_task", _no_llm)
+    payload = _minimal_de_response("2.4")
+    payload["assignment_id"] = "run:2.4:data_engineer"
+    outcome = debug_json_parse(
+        state=state,
+        artifact_dir=artifact_dir,
+        requesting_agent="data_engineer",
+        raw_text=json.dumps(payload),
+        failure_kind="json_schema",
+        invalid_payload=payload,
+    )
+    assert outcome.status == "FIXED"
+    assert outcome.repair_kind == "deterministic_schema"
+    assert outcome.payload is not None
+    assert outcome.payload["assignment_id"] == "2.4"
+
+
+def test_format_developer_debug_task_single_object_braces(
+    state: CrispDMState,
+    artifact_dir: Path,
+):
+    state.substep = "6.2"
+    text = format_developer_debug_task(
+        state,
+        artifact_dir,
+        failure_kind="json_schema",
+        requesting_agent="storyteller",
+        error_class="json_schema",
+        last_error="assignment_id mismatch",
+        stderr_excerpt="",
+        failing_code="",
+        header_var_names=[],
+        contract_hint="",
+        schema_columns=[],
+        schema_errors=["assignment_id: expected '6.2', got 'run:6.2:storyteller'"],
+    )
+    assert "begin with '{' and end with '}'" in text
+    assert "begin with '{{'" not in text
+    assert "end with '}}'" not in text
 
 
 def test_debug_json_parse_repairs_trailing_comma(state: CrispDMState, artifact_dir: Path):
@@ -247,6 +303,26 @@ def test_run_json_task_accepts_schema_valid_developer_repair(
     )
     assert parsed["assignment_id"] == "2.4"
     assert parsed["status"] == "COMPLETED"
+
+
+@patch("maads.crew._kickoff")
+def test_run_json_task_coerces_specialist_assignment_id(
+    mock_kickoff,
+    state: CrispDMState,
+    artifact_dir: Path,
+):
+    state.substep = "6.2"
+    payload = minimal_storyteller_output("6.2")
+    payload["assignment_id"] = "run:6.2:storyteller"
+    mock_kickoff.return_value = json.dumps(payload)
+    parsed = run_json_task(
+        "storyteller",
+        "generate report evidence",
+        state,
+        artifact_dir=artifact_dir,
+    )
+    assert parsed is not None
+    assert parsed["assignment_id"] == "6.2"
 
 
 def test_debug_python_exec_fixes_failing_code(

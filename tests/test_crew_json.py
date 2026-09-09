@@ -73,3 +73,9 @@ def test_extract_json_prose_before_object() -> None:
 def test_extract_json_invalid_returns_none() -> None:
     assert _extract_json("not json at all") is None
     assert _extract_json("") is None
+
+
+def test_extract_json_extra_wrapping_braces() -> None:
+    """LLMs sometimes wrap a valid object in an extra brace pair."""
+    raw = '{{"action": "advance", "reason": "ok"}}'
+    assert _extract_json(raw) == {"action": "advance", "reason": "ok"}

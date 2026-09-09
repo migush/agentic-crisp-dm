@@ -138,10 +138,9 @@ def _strip_markdown_wrappers(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _find_balanced_json(text: str) -> str | None:
-    """Extract the first top-level ``{...}`` object with balanced braces."""
-    start = text.find("{")
-    if start == -1:
+def _balanced_object_at(text: str, start: int) -> str | None:
+    """Extract the ``{...}`` object whose opening brace is at ``start``."""
+    if start < 0 or start >= len(text) or text[start] != "{":
         return None
     depth = 0
     in_string = False
@@ -165,6 +164,14 @@ def _find_balanced_json(text: str) -> str | None:
             if depth == 0:
                 return text[start : i + 1]
     return None
+
+
+def _find_balanced_json(text: str) -> str | None:
+    """Extract the first top-level ``{...}`` object with balanced braces."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    return _balanced_object_at(text, start)
 
 
 def _repair_json(text: str) -> str:
@@ -209,13 +216,18 @@ def _extract_json(text: str) -> dict | None:
                 return parsed
 
     for candidate in candidates:
-        fragment = _find_balanced_json(candidate)
-        if not fragment:
-            continue
-        for body in (fragment, _repair_json(fragment)):
-            parsed = _try_parse_json(body)
-            if parsed is not None:
-                return parsed
+        search_from = 0
+        while True:
+            start = candidate.find("{", search_from)
+            if start == -1:
+                break
+            fragment = _balanced_object_at(candidate, start)
+            if fragment:
+                for body in (fragment, _repair_json(fragment)):
+                    parsed = _try_parse_json(body)
+                    if parsed is not None:
+                        return parsed
+            search_from = start + 1
 
     return None
 
