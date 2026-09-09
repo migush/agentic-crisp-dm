@@ -249,14 +249,18 @@ class DomainSituationAssessment(BaseModel):
 
 
 class DomainOutput(BaseModel):
-    business_objectives: str
-    situation_assessment: DomainSituationAssessment
-    data_mining_goal: str
-    success_criterion: dict[str, Any]
+    """Union-ish domain payload across 1.1 / 1.2 / 1.3 (per-substep fields optional)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    business_objectives: str | None = None
+    situation_assessment: DomainSituationAssessment | dict[str, Any] | None = None
+    data_mining_goal: str | None = None
+    success_criterion: dict[str, Any] | None = None
     data_description_notes: list[dict[str, Any]] = Field(default_factory=list)
     feature_hints: list[dict[str, Any]] = Field(default_factory=list)
     domain_data_quality_flags: list[dict[str, Any]] = Field(default_factory=list)
-    loop_a_recommendation: dict[str, Any]
+    loop_a_recommendation: dict[str, Any] | None = None
     assumptions: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
 
