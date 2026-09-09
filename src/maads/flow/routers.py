@@ -34,7 +34,7 @@ def route_from_plan(ctx: RunContext, plan: Plan) -> str:
 
 def checkpoint_route(ctx: RunContext) -> str:
     """Resolve PM plan at a checkpoint substep and return a flow route."""
-    plan = resolve_plan(ctx)
+    plan = resolve_plan(ctx, force=True)
     ctx.state.append_log(
         "pm",
         f"plan -> {plan.action} {plan.target_substep or ''}: {plan.reason}",

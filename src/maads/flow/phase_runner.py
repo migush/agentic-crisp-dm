@@ -26,7 +26,7 @@ MAX_INNER_LOOP_ITERATIONS = 3
 PM_DECISION_SUBSTEPS = frozenset({
     "1.1",
     "2.1",
-    "3.1",
+    # Loop A at phase-2 exit lives only in checkpoint_3_1 (not again at 3.1 entry).
     "4.1",
     "5.1",
     "5.2",
@@ -81,9 +81,15 @@ def check_global_halt(ctx: RunContext) -> str | None:
     return None
 
 
-def resolve_plan(ctx: RunContext) -> Plan:
+def resolve_plan(ctx: RunContext, *, force: bool = False) -> Plan:
+    """Ask the PM for a plan, or return a mechanical advance.
+
+    Flow checkpoints pass ``force=True`` so Loop A/B/C decisions still consult
+    the PM even when the current substep is not in ``PM_DECISION_SUBSTEPS``
+    (e.g. checkpoint_3_1 after 3.1 was removed from in-phase decision points).
+    """
     substep = ctx.state.substep
-    if substep not in PM_DECISION_SUBSTEPS:
+    if not force and substep not in PM_DECISION_SUBSTEPS:
         return Plan(
             action="advance",
             reason=f"mechanical advance within phase at {substep}",

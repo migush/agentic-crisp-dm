@@ -5,7 +5,7 @@ from pathlib import Path
 
 from maads.crew_base import build_agent
 from maads.crews.paths import AGENTS_CONFIG
-from maads.prompts import AGENT_PROMPTS
+from maads.prompts.identities.domain import domain_identity
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
@@ -38,7 +38,9 @@ class DomainCrew:
 
     @agent
     def domain(self) -> Agent:
-        return build_agent("domain", AGENT_PROMPTS["domain"])
+        # Placeholder identity for CrewBase registration; live kickoffs use
+        # agent_for(..., dataset_name=case_id) which formats via domain_identity.
+        return build_agent("domain", domain_identity("dataset"))
 
     @task
     def task_1_1(self) -> Task:

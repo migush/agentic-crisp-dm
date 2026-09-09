@@ -481,12 +481,7 @@ class CrispDMState(BaseModel):
             base["du_so_far"] = self.du.model_dump(exclude_none=True)
             base["feature_hints"] = self.config.feature_hints
         elif agent_name == "data_engineer":
-            base["raw_data_paths"] = self.config.data.model_dump()
-            base["data_mining_goals"] = self.bu.data_mining_goals
-            base["du_so_far"] = self.du.model_dump(exclude_none=True)
-            base["dp_so_far"] = self.dp.model_dump(exclude_none=True)
-            if self.substep.startswith("2."):
-                base["feature_hints"] = self.config.feature_hints
+            base.update(self._de_phase_view())
         elif agent_name == "data_scientist":
             base["data_mining_goals"] = self.bu.data_mining_goals
             base["dataset"] = self.dp.dataset
@@ -519,6 +514,56 @@ class CrispDMState(BaseModel):
             base["class_labels"] = dict(self.config.class_labels)
             base["submission_path"] = self.dep.submission_path
         return base
+
+    def _de_phase_view(self) -> dict[str, Any]:
+        """Substep-scoped DU/DP slices for the Data Engineer (token discipline)."""
+        du = self.du.model_dump(exclude_none=True)
+        dp = self.dp.model_dump(exclude_none=True)
+        # Never dump reformatted payloads into prompts.
+        dp.pop("reformatted_data", None)
+
+        du_keys: tuple[str, ...] = ()
+        dp_keys: tuple[str, ...] = ()
+        sub = self.substep
+        if sub == "2.4":
+            du_keys = ("data_description_report",)
+        elif sub == "3.1":
+            du_keys = (
+                "data_quality_report",
+                "data_description_report",
+                "data_exploration_report",
+            )
+        elif sub == "3.2":
+            du_keys = ("data_quality_report", "data_description_report")
+            dp_keys = ("rationale_for_inclusion_exclusion",)
+        elif sub == "3.3":
+            du_keys = ("data_description_report",)
+            dp_keys = ("rationale_for_inclusion_exclusion", "data_cleaning_report")
+        elif sub == "3.4":
+            dp_keys = (
+                "rationale_for_inclusion_exclusion",
+                "derived_attributes",
+                "generated_records",
+            )
+        elif sub == "3.5":
+            dp_keys = (
+                "rationale_for_inclusion_exclusion",
+                "data_cleaning_report",
+                "derived_attributes",
+                "generated_records",
+                "merged_data",
+            )
+        # 2.1 / 2.2: no prior DU/DP reports
+
+        out: dict[str, Any] = {
+            "raw_data_paths": self.config.data.model_dump(),
+            "data_mining_goals": self.bu.data_mining_goals,
+            "du_so_far": {k: du[k] for k in du_keys if k in du and du[k]},
+            "dp_so_far": {k: dp[k] for k in dp_keys if k in dp and dp[k]},
+        }
+        if sub.startswith("2."):
+            out["feature_hints"] = self.config.feature_hints
+        return out
 
 
 def next_substep(state: "CrispDMState") -> str | None:
