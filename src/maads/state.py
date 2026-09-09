@@ -194,6 +194,8 @@ class ModelRun(BaseModel):
     assessment: str | None = None
     revised_parameter_settings: dict[str, Any] | None = None
     evaluation_bundle: EvaluationBundle | None = None
+    # Absolute path to persisted fitted pipeline (joblib); enables exact 4.4/6.1 reuse.
+    artifact_path: str | None = None
 
 
 # ── Phase 1 — Business Understanding ───────────────────────────────────────

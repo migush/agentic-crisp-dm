@@ -72,11 +72,21 @@ def test_inspect_dataset_train_only_with_sources(tmp_path):
     assert len(summary["source_paths"]) == 2
 
 
-def test_execution_evidence_collect_requires_authored_code(monkeypatch, state, tmp_path):
-    monkeypatch.setattr(crew, "run_text_task", lambda *a, **k: "")
+def test_execution_evidence_collect_is_deterministic(monkeypatch, state, tmp_path):
+    """2.1 uses profile/collect tools — no authored-code LLM call."""
+    calls: list[str] = []
+
+    def track(*a, **k):
+        calls.append("run_text_task")
+        return ""
+
+    monkeypatch.setattr(crew, "run_text_task", track)
+    state.substep = "2.1"
     pyexec = PythonExec(workdir=tmp_path / "sandbox")
-    with pytest.raises(crew.CrewKickoffError):
-        execution_evidence(pyexec, state, "2.1", tmp_path)
+    out = execution_evidence(pyexec, state, "2.1", tmp_path)
+    assert "initial_data_collection_report" in out
+    assert out["initial_data_collection_report"]["train_rows"] > 0
+    assert calls == []
 
 
 def test_execution_evidence_collect_with_stub_code(monkeypatch, state, tmp_path):
@@ -121,8 +131,33 @@ def test_train_schema_context_notes_absent_id(tmp_path):
 def test_text_modeling_hint_for_text_cases(state):
     state.config.feature_hints = {"text_free": ["text"]}
     hint = _text_modeling_hint(state)
-    assert "TfidfVectorizer" in hint
-    assert "FunctionTransformer" in hint
+    assert "tfidf_logreg" in hint
+    assert "ml_tools" in hint
+
+
+def test_select_best_model_minimizes_rmse():
+    from maads.capabilities.ml_tools import select_best_model
+    from maads.state import ModelRun
+
+    models = [
+        ModelRun(technique="a", cv_score=0.40, description="worse"),
+        ModelRun(technique="b", cv_score=0.12, description="better"),
+        ModelRun(technique="c", cv_score=0.25, description="mid"),
+    ]
+    best = select_best_model(models, metric="rmse", direction="minimize")
+    assert best.technique == "b"
+
+
+def test_select_best_model_maximizes_auc():
+    from maads.capabilities.ml_tools import select_best_model
+    from maads.state import ModelRun
+
+    models = [
+        ModelRun(technique="a", cv_score=0.70, description=""),
+        ModelRun(technique="b", cv_score=0.85, description=""),
+    ]
+    best = select_best_model(models, metric="roc_auc")
+    assert best.technique == "b"
 
 
 def test_schema_columns_prefers_prepared_train(state):
@@ -161,7 +196,7 @@ def test_text_model_baseline_on_prepared_train_without_id(tmp_path):
     assert isinstance(payload["cv_std"], float)
 
 
-def test_ds_43_text_fallback_when_authored_code_fails(monkeypatch, tmp_path):
+def test_ds_43_deterministic_text_baseline(monkeypatch, tmp_path):
     import maads.crew as crew
     from maads.config import load_case_config
     from maads.paths import resolve_path
@@ -175,21 +210,18 @@ def test_ds_43_text_fallback_when_authored_code_fails(monkeypatch, tmp_path):
     state.dp.dataset = {"train": str(train_path)}
     state.md.modeling_technique = "tfidf_logreg"
 
-    broken = '''```python
-train = pd.read_parquet(TRAIN_PARQUET)
-if ID_COL not in train.columns:
-    raise ValueError(f"missing {ID_COL}")
-```'''
-
-    monkeypatch.setattr(crew, "run_text_task", lambda *a, **k: broken)
+    calls: list[str] = []
+    monkeypatch.setattr(crew, "run_text_task", lambda *a, **k: calls.append("llm") or "")
     pyexec = PythonExec(workdir=tmp_path / "sandbox")
     out = ds_execution_evidence(pyexec, state, "4.3", tmp_path)
     assert "model_run" in out
     assert out["model_run"]["cv_score"] is not None
     assert out["model_run"]["technique"] == "tfidf_logreg"
+    assert out["model_run"].get("artifact_path")
+    assert calls == []
 
 
-def test_ds_44_text_fallback_when_authored_code_fails(monkeypatch, tmp_path):
+def test_ds_44_deterministic_text_assess(monkeypatch, tmp_path):
     import maads.crew as crew
     from maads.config import load_case_config
     from maads.paths import resolve_path
@@ -206,11 +238,7 @@ def test_ds_44_text_fallback_when_authored_code_fails(monkeypatch, tmp_path):
         ModelRun(technique="tfidf_logreg", cv_score=0.74, cv_std=0.01, description="test"),
     )
 
-    broken = '''```python
-raise RuntimeError("no pipeline in state")
-```'''
-
-    monkeypatch.setattr(crew, "run_text_task", lambda *a, **k: broken)
+    monkeypatch.setattr(crew, "run_text_task", lambda *a, **k: "")
     pyexec = PythonExec(workdir=tmp_path / "sandbox")
     out = ds_execution_evidence(pyexec, state, "4.4", tmp_path)
     assert "evaluation_bundle" in out
@@ -297,51 +325,35 @@ def test_integrate_preserves_target(monkeypatch, state, tmp_path):
     assert state.config.target_column in cols
 
 
-def test_contract_fails_when_target_dropped(monkeypatch, state, tmp_path):
-    """A 3.4 author that drops the target must never satisfy the contract.
+def test_deterministic_integrate_preserves_target_column(state, tmp_path):
+    """Deterministic 3.4 must keep TARGET even when aligning to test schema."""
+    from maads.capabilities.ml_tools import integrate_tables
 
-    Locks the B1 wiring: the target check is unconditional, so an otherwise
-    well-formed integrate (all keys present, valid JSON) still fails when the
-    written parquet lost the target, exhausts retries + DEBUG, and halts.
-    """
-    drop_target = '''```python
-import pandas as pd, json, os
-def read_table(path):
-    return pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path)
-os.makedirs(OUTDIR, exist_ok=True)
-tr = read_table(TRAIN_IN); te = read_table(TEST_IN)
-shared = [c for c in tr.columns if c in te.columns]  # drops train-only TARGET
-tr = tr[shared]
-tp = os.path.join(OUTDIR, "train_integrated.parquet")
-sp = os.path.join(OUTDIR, "test_integrated.parquet")
-tr.to_parquet(tp); te.to_parquet(sp)
-print(json.dumps({"train_out": tp, "test_out": sp,
-                  "train_rows": int(len(tr)), "test_rows": int(len(te)),
-                  "columns_train": list(tr.columns), "columns_test": list(te.columns)}))
-```'''
-
-    def fake(agent_name, instruction, st, **kwargs):
-        if agent_name == "data_engineer" and st.substep == "3.4":
-            return drop_target
-        return ""  # developer DEBUG gets no usable fix -> stays STUCK
-
-    monkeypatch.setattr(crew, "run_text_task", fake)
-    state.substep = "3.4"
-    pyexec = PythonExec(workdir=tmp_path / "sandbox")
-    with pytest.raises(crew.CrewKickoffError):
-        execution_evidence(pyexec, state, "3.4", tmp_path)
+    wd = prep_workdir(tmp_path)
+    train = wd / "train_constructed.parquet"
+    test = wd / "test_constructed.parquet"
+    target = state.config.target_column
+    pd.DataFrame({target: [0, 1], "Age": [22, 38], "Sex": ["m", "f"]}).to_parquet(train)
+    pd.DataFrame({"Age": [30], "Sex": ["f"]}).to_parquet(test)
+    out = integrate_tables(str(train), str(test), wd, target=target)
+    cols = pd.read_parquet(out["train_out"]).columns
+    assert target in cols
 
 
 def test_execution_evidence_inspect_error_skips_authored_code(monkeypatch, state, tmp_path):
-    """Missing train must fail closed before any sandbox authoring."""
+    """Missing train must fail closed before any deterministic profiling."""
     calls: list[str] = []
 
     def boom(*a, **k):
-        calls.append("run_authored_code")
-        raise AssertionError("run_authored_code must not be called")
+        calls.append("profile_dataset")
+        raise AssertionError("profile_dataset must not be called")
 
     monkeypatch.setattr(
-        "maads.capabilities.data_engineer.run_authored_code",
+        "maads.capabilities.ml_tools.profile_dataset",
+        boom,
+    )
+    monkeypatch.setattr(
+        "maads.capabilities.ml_tools.collect_report",
         boom,
     )
     state.config = state.config.model_copy(

@@ -1,37 +1,22 @@
-"""Data Engineer capabilities — CRISP-DM-independent execution API."""
+"""Data Engineer capabilities — orchestrate deterministic data tools."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-import json
 
-from maads.codegen import run_authored_code
-from maads.deltas import StateDelta
-from maads.state import CrispDMState
-from maads.tools import PythonExec
-
+from maads.capabilities import ml_tools
 from maads.capabilities.shared import (
     abspath as _abspath,
     de_dataset_context as _de_dataset_context,
-    has_keys as _has_keys,
+    measure_prep_artifacts as _measure_prep_artifacts,
     prep_inputs as _prep_inputs,
     prep_workdir as _prep_workdir,
-    describe_data_contract as _describe_data_contract,
-    measure_prep_artifacts as _measure_prep_artifacts,
     require_inspect_ok as _require_inspect_ok,
-    target_preserved as _target_preserved,
 )
 from maads.config import primary_train_csv, source_locations
-
-_QUALITY_24_INSTRUCTION = (
-    "CRISP-DM 2.4 Verify Data Quality: inspect the training data and classify "
-    "genuine quality BLOCKERS vs tolerable issues. Compute from the data. "
-    "Parse DATASET_INSPECT_JSON for na_means_absent: columns listed there use "
-    "NA to mean feature absence (not missing data) — high missingness on those "
-    "columns is NOT a blocker; record as tolerable with note 'structural absence "
-    "(no feature)'. Blockers are reserved for: missing target, constant columns, "
-    "duplicate-ID issues, undocumented high missingness, and schema contradictions."
-)
+from maads.deltas import StateDelta
+from maads.state import CrispDMState
+from maads.tools import PythonExec
 
 
 def execution_evidence(
@@ -40,95 +25,54 @@ def execution_evidence(
     substep: str,
     artifact_dir: Path,
 ) -> dict[str, Any]:
-    """Have the Data Engineer author and run the code for its owned substep.
+    """Run deterministic DE tools for owned execution substeps.
 
-    Returns measured evidence in the shape `_apply_data_engineer_response`
-    expects. Each authored attempt self-debugs via codegen.run_authored_code
-    (with Developer DEBUG on exhaustion); no baseline fallback.
+    ``pyexec`` is retained for API compatibility with agents/tests; standard
+    DU/DP paths do not author freeform Python.
     """
+    del pyexec  # unused on the deterministic path
     train = _abspath(state.config.data.train_csv) or _abspath(primary_train_csv(state.config.data))
     test = _abspath(state.config.data.test_csv)
     target = state.resolved_target()
     idc = state.config.id_column
+    hints = state.config.feature_hints or {}
     ds_ctx = _de_dataset_context(state, train, test)
     _require_inspect_ok(ds_ctx)
-    sources_json = json.dumps(source_locations(state.config.data))
-    missing_note = (
-        " Missing TEST_CSV or sample submission is work for this phase, not an upload error: "
-        "inventory SOURCE_PATHS, decide file roles from evidence, and create a modelling "
-        "holdout or submission schema only when the goal requires it."
-    )
+    sources = source_locations(state.config.data)
+    na_absent = list(hints.get("na_means_absent") or [])
 
     if substep == "2.1":
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 2.1 Collect Initial Data: load the available source "
-                        "CSVs (TRAIN_CSV, TEST_CSV when non-empty, and every path in "
-                        "SOURCE_PATHS) and report a brief collection summary. "
-                        "Use DATASET_INSPECT_JSON for column alignment hints."
-                        + missing_note,
-            header_vars={
-                "TRAIN_CSV": train, "TEST_CSV": test, "SOURCE_PATHS": sources_json, **ds_ctx,
-            },
-            contract=lambda p: _has_keys(p, "train_rows", "columns"),
-            contract_hint="Required keys: train_rows (int), columns (list). Include test_rows when a test file exists.",
-            artifact_dir=artifact_dir,
-        )
-        return {"initial_data_collection_report": res.payload}
+        return {
+            "initial_data_collection_report": ml_tools.collect_report(
+                train, test, source_paths=sources or None,
+            ),
+        }
 
     if substep == "2.2":
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 2.2 Describe Data: profile the training data — "
-                        "row/column counts, dtypes, missing counts, cardinality.",
-            header_vars={"TRAIN_CSV": train, "SOURCE_PATHS": sources_json, **ds_ctx},
-            contract=_describe_data_contract,
-            contract_hint=(
-                "Required keys: n_rows (int), n_cols (int), columns (list of str), "
-                "dtypes (dict column name -> dtype string), "
-                "missing (dict column name -> int count). "
-                "Do not emit parallel lists for dtypes or missing."
-            ),
-            artifact_dir=artifact_dir,
+        profile = ml_tools.profile_dataset(
+            train, test or None, target=target or None, id_column=idc or None,
+            na_means_absent=na_absent,
         )
-        return {"data_description_report": res.payload}
+        return {"data_description_report": ml_tools.describe_report_from_profile(profile)}
 
     if substep == "2.4":
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction=_QUALITY_24_INSTRUCTION,
-            header_vars={"TRAIN_CSV": train, "TARGET": target, "SOURCE_PATHS": sources_json, **ds_ctx},
-            contract=lambda p: _has_keys(p, "blockers", "tolerable"),
-            contract_hint="Required keys: blockers (list of strings), tolerable (list of strings).",
-            artifact_dir=artifact_dir,
+        profile = ml_tools.profile_dataset(
+            train, test or None, target=target or None, id_column=idc or None,
+            na_means_absent=na_absent,
         )
-        return {"data_quality_report": res.payload}
+        return {
+            "data_quality_report": ml_tools.quality_report_from_profile(
+                profile, target=target, na_means_absent=na_absent,
+            ),
+        }
 
     prep_wd = str(_prep_workdir(artifact_dir).resolve())
     train_in, test_in = _prep_inputs(artifact_dir, state, substep)
 
     if substep == "3.2":
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 3.2 Clean Data: read TRAIN_IN and TEST_IN (TEST_IN may "
-                        "be empty — then decide whether to split or leave holdout for later), "
-                        "apply leakage-safe cleaning (impute missing, fix invalid values), "
-                        "write train_clean.parquet and test_clean.parquet under OUTDIR, "
-                        "and report missing counts before and after. Missing test/submission/"
-                        "integer labels are work for this phase, not upload errors.",
-            header_vars={
-                "TRAIN_IN": train_in, "TEST_IN": test_in, "OUTDIR": prep_wd, "TARGET": target,
-                **ds_ctx,
-            },
-            contract=lambda p: (
-                _has_keys(p, "train_out", "test_out")
-                or _has_keys(p, "missing_before", "missing_after")
-            ) + _target_preserved(p, target),
-            contract_hint="Required keys: train_out, test_out (paths), missing_before, "
-                          "missing_after (per-column int counts).",
-            artifact_dir=artifact_dir,
+        payload = ml_tools.clean_tables(
+            train_in, test_in, prep_wd, target=target, feature_hints=hints,
         )
-        payload = res.payload
         return {
             "data_cleaning_report": {
                 "missing_before": payload.get("missing_before"),
@@ -136,95 +80,43 @@ def execution_evidence(
                 "operations": payload.get("operations") or [],
                 "train_out": payload.get("train_out"),
                 "test_out": payload.get("test_out"),
-                "source": "executed at 3.2",
+                "source": payload.get("source") or "deterministic clean_tables",
             },
         }
 
     if substep == "3.3":
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 3.3 Construct Data: read TRAIN_IN and TEST_IN, add "
-                        "justified derived features available at prediction time, write "
-                        "train_constructed.parquet and test_constructed.parquet under OUTDIR, "
-                        "and list derived feature names.",
-            header_vars={
-                "TRAIN_IN": train_in, "TEST_IN": test_in, "OUTDIR": prep_wd,
-                "TARGET": target, **ds_ctx,
-            },
-            contract=lambda p: _has_keys(p, "train_out", "test_out", "derived")
-            + _target_preserved(p, target),
-            contract_hint="Required keys: train_out, test_out (paths), derived (list of names).",
-            artifact_dir=artifact_dir,
+        payload = ml_tools.construct_tables(
+            train_in, test_in, prep_wd, target=target, feature_hints=hints,
         )
-        payload = res.payload
         derived = payload.get("derived") or []
         return {
             "derived_attributes": {
                 "items": [
-                    item if isinstance(item, dict) else {"field": str(item), "source": "executed at 3.3"}
+                    item if isinstance(item, dict) else {"field": str(item), "source": "deterministic 3.3"}
                     for item in derived
                 ],
             },
-            "generated_records": {"count": 0, "source": "executed at 3.3"},
+            "generated_records": {"count": 0, "source": "deterministic 3.3"},
         }
 
     if substep == "3.4":
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 3.4 Integrate Data: read TRAIN_IN and TEST_IN, validate "
-                        "schema compatibility and row granularity, write "
-                        "train_integrated.parquet and test_integrated.parquet under OUTDIR, "
-                        "and report merged row/column counts. The TARGET column exists only "
-                        "in train (not test) — this is expected; never drop TARGET to make "
-                        "the schemas match. Keep all train columns; only align shared "
-                        "feature columns.",
-            header_vars={
-                "TRAIN_IN": train_in, "TEST_IN": test_in, "OUTDIR": prep_wd,
-                "TARGET": target, **ds_ctx,
-            },
-            contract=lambda p: _has_keys(p, "train_out", "test_out", "train_rows", "test_rows")
-            + _target_preserved(p, target),
-            contract_hint="Required keys: train_out, test_out, train_rows, test_rows, "
-                          "columns_train, columns_test.",
-            artifact_dir=artifact_dir,
-        )
-        payload = res.payload
+        payload = ml_tools.integrate_tables(train_in, test_in, prep_wd, target=target)
         return {
             "merged_data": {
                 "train_rows": payload.get("train_rows"),
                 "test_rows": payload.get("test_rows"),
                 "columns_train": payload.get("columns_train"),
                 "columns_test": payload.get("columns_test"),
-                "source": "executed at 3.4",
+                "source": payload.get("source") or "deterministic integrate_tables",
             },
         }
 
     if substep == "3.5":
         outdir = str(artifact_dir.resolve())
-        source_train = train
-        res = run_authored_code(
-            pyexec=pyexec, agent_name="data_engineer", state=state,
-            instruction="CRISP-DM 3.5 Format Data: read TRAIN_IN and TEST_IN (create a "
-                        "modelling holdout if only one table exists), drop identifier/"
-                        "leakage columns, keep TARGET in train when it is known, keep "
-                        "ID_COL in test when it is known, and write final train.parquet "
-                        "and test.parquet into OUTDIR. A labelled second file may be "
-                        "holdout, leakage, or something else — decide from evidence. "
-                        "Invent a submission schema only if the goal needs predictions.",
-            header_vars={
-                "TRAIN_IN": train_in, "TEST_IN": test_in, "OUTDIR": outdir,
-                "SOURCE_TRAIN": source_train, "TARGET": target, "ID_COL": idc,
-                **ds_ctx,
-            },
-            contract=lambda p: (
-                _has_keys(p, "train", "test", "n_train", "n_test")
-                or ([] if int(p.get("n_train", 0)) > 0 else ["n_train must be > 0"])
-            ) + _target_preserved(p, target, path_key="train"),
-            contract_hint="Required keys: train (parquet path), test (parquet path), "
-                          "n_train (int>0), n_test (int), derived (list), dropped (list).",
-            artifact_dir=artifact_dir,
+        info = ml_tools.format_tables(
+            train_in, test_in, outdir,
+            target=target, id_column=idc, feature_hints=hints,
         )
-        info = res.payload
         n_derived = len(info.get("derived") or [])
         measured = _measure_prep_artifacts(
             source_train=train,
@@ -235,11 +127,18 @@ def execution_evidence(
             payload_derived=info.get("derived") or [],
             payload_dropped=info.get("dropped") or [],
         )
+        findings = ml_tools.lint_prepared_features(
+            info["train"], target=target, id_column=idc,
+        )
+        if findings:
+            state.validator_findings = list(
+                dict.fromkeys([*(state.validator_findings or []), *findings]),
+            )
         return {
             "dataset": {"train": info["train"], "test": info["test"]},
             "dataset_description": (
                 f"{info.get('n_train')} train / {info.get('n_test')} test rows (parquet); "
-                f"{n_derived} derived feature(s) reported by code"
+                f"{n_derived} derived feature(s); deterministic format_tables"
             ),
             "derived": info.get("derived") or [],
             "dropped": info.get("dropped") or [],

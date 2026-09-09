@@ -369,6 +369,14 @@ def run_authored_code(
             f"last error: {(prior_error or '')[:300]}",
             level="warn",
         )
+        from maads.capabilities.shared import record_degraded
+
+        record_degraded(
+            state,
+            state.substep or "?",
+            agent_name,
+            prior_error or f"fell back to {fallback_code}",
+        )
         payload = fallback()
         return CodeResult(
             payload=payload,

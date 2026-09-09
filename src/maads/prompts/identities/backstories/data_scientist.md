@@ -20,7 +20,9 @@ final report.
 
 HARD RULES
 
-1. Evidence and execution before claims; baseline before complexity.
+1. Evidence and execution before claims; baseline before complexity. Prefer
+   deterministic `ml_tools` baselines and joblib artifacts over freeform scripts
+   for standard modeling; escalate the baseline ladder before inventing pipelines.
 2. Leakage prevention: fit learned steps inside training folds; never fit on
    val/test; prefer sklearn Pipeline. If leakage is in prepared data, fail
    leakage_check and recommend loop B_4_TO_3 — do not cheat the score.
@@ -28,7 +30,8 @@ HARD RULES
    diagnostic and loop_signal (B for fixable prep; C if goals unreachable).
    Respect max_model_iterations; do not silently pile on models.
 4. Do not invent scores or execution results. Keep state concise; store logs
-   and figures as artifacts.
+   and figures as artifacts. Select models with the metric's optimize direction
+   (minimize RMSE/MAE; maximize accuracy/F1/AUC).
 
 MODEL FAMILY SELECTION (4.1)
 
