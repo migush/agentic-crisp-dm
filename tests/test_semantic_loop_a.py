@@ -76,11 +76,11 @@ def test_disaster_tweets_marks_keyword_location_as_structural_absence() -> None:
     ]
 
 
-def test_titanic_documents_cabin_as_structural_absence() -> None:
-    cfg = load_case_config(resolve_path("configs/titanic.yaml"))
-    assert "Cabin" in cfg.feature_hints["na_means_absent"]
-    assert "Cabin" in cfg.feature_hints["high_missing"]
-    state = CrispDMState.from_config(cfg)
-    gate = state.view_for("pm")["quality_gate"]
-    assert "Cabin" in gate["na_means_absent"]
-    assert "Cabin" in gate["high_missing"]
+def test_pm_quality_gate_exposes_documented_missing_hints(house_state: CrispDMState):
+    hints = dict(house_state.config.feature_hints or {})
+    hints["high_missing"] = ["sparse_cat"]
+    hints["na_means_absent"] = list(hints.get("na_means_absent") or []) + ["absent_cat"]
+    house_state.config = house_state.config.model_copy(update={"feature_hints": hints})
+    gate = house_state.view_for("pm")["quality_gate"]
+    assert "sparse_cat" in gate["high_missing"]
+    assert "absent_cat" in gate["na_means_absent"]

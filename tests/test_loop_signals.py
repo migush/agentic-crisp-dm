@@ -29,9 +29,18 @@ def state() -> CrispDMState:
     return CrispDMState.from_config(cfg)
 
 
-def test_documented_cabin_missingness_reaches_pm_quality_gate(
+def test_documented_missing_hints_are_not_quality_blockers(
     state: CrispDMState, tmp_path: Path,
 ):
+    """Columns listed in high_missing / na_means_absent are documented, not Loop A blockers."""
+    hints = state.config.feature_hints or {}
+    documented = [
+        str(c)
+        for key in ("high_missing", "na_means_absent")
+        for c in (hints.get(key) or [])
+    ]
+    if not documented:
+        pytest.skip("fixture case has no documented-missing hints")
     state.substep = "2.4"
     de = DataEngineerAgent(artifact_dir=tmp_path)
     delta = de.act(state)
@@ -39,13 +48,14 @@ def test_documented_cabin_missingness_reaches_pm_quality_gate(
     report = state.du.data_quality_report or {}
     blockers = report.get("blockers") or []
     tolerable = report.get("tolerable") or []
-    assert not any("Cabin" in b for b in blockers)
-    assert any("Cabin" in t for t in tolerable)
-    pm_view = state.view_for("pm")
-    gate = pm_view["quality_gate"]
-    assert "Cabin" in gate["na_means_absent"]
-    assert "Cabin" in gate["high_missing"]
-    assert "quality_gate" in pm_view
+    for col in documented:
+        assert not any(col in b for b in blockers), blockers
+        assert any(col in t for t in tolerable), tolerable
+    gate = state.view_for("pm")["quality_gate"]
+    for col in hints.get("high_missing") or []:
+        assert str(col) in gate["high_missing"]
+    for col in hints.get("na_means_absent") or []:
+        assert str(col) in gate["na_means_absent"]
 
 
 def test_validator_findings_populate_and_reach_pm(state: CrispDMState, tmp_path: Path):

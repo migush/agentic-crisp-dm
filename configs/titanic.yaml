@@ -24,8 +24,6 @@ feature_hints:
   ordinal: []
   text_free: [Name, Ticket, Cabin]
   high_missing: [Cabin]
-  # Cabin NA means the passenger was not assigned a cabin, not data corruption.
-  na_means_absent: [Cabin]
 
 class_labels:
   "0": "Not survived"

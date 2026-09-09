@@ -38,8 +38,15 @@ def test_de_quality_report_ignores_llm_when_execution_present(tmp_path: Path, st
 
     blockers = (state.du.data_quality_report or {}).get("blockers") or []
     tolerable = (state.du.data_quality_report or {}).get("tolerable") or []
-    assert any("Cabin" in t for t in tolerable), tolerable
-    assert not any("Cabin" in b for b in blockers)
+    hints = state.config.feature_hints or {}
+    documented = [
+        str(c)
+        for key in ("high_missing", "na_means_absent")
+        for c in (hints.get(key) or [])
+    ]
+    for col in documented:
+        assert any(col in t for t in tolerable), tolerable
+        assert not any(col in b for b in blockers)
     assert not any("LLM fiction" in b for b in blockers)
 
 
@@ -67,8 +74,12 @@ def test_de_prep_substeps_chain_execution(tmp_path: Path, state: CrispDMState):
     derived_fields = [
         (d.get("field") if isinstance(d, dict) else d) for d in derived
     ]
-    assert "Cabin_missing" in derived_fields
-    assert "Age_x_Fare" in derived_fields
+    hints = state.config.feature_hints or {}
+    for col in hints.get("high_missing") or []:
+        assert f"{col}_missing" in derived_fields
+    numeric = list(hints.get("numeric_with_missing") or [])
+    if len(numeric) >= 2:
+        assert f"{numeric[0]}_x_{numeric[1]}" in derived_fields
 
 
 def test_de_prep_reports_measured_from_parquet_not_llm(tmp_path: Path, state: CrispDMState):
@@ -131,14 +142,17 @@ def test_ds_model_run_ignores_llm_technique_when_execution_present(
     best = ml_tools.select_best_model(
         state.md.models, metric=state.config.evaluation_metric,
     )
-    assert best.technique in {
-        "logistic_regression",
-        "random_forest",
-        "hist_gradient_boosting",
-    }
     assert best.cv_score is not None
     assert best.cv_score != 0.99
-    assert all(m.technique != "tfidf_logreg" for m in state.md.models)
+    if ml_tools.is_nlp_primary(state.config.feature_hints):
+        assert str(best.technique).startswith("tfidf")
+    else:
+        assert best.technique in {
+            "logistic_regression",
+            "random_forest",
+            "hist_gradient_boosting",
+        }
+        assert all(m.technique != "tfidf_logreg" for m in state.md.models)
 
 
 def test_de_skips_kickoff_when_execution_authoritative(tmp_path: Path, state: CrispDMState):

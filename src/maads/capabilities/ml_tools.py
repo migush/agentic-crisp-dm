@@ -50,11 +50,12 @@ _TABULAR_HINT_KEYS = (
 
 
 def is_nlp_primary(feature_hints: dict[str, Any] | None) -> bool:
-    """True when free-text is the modeling representation, not a side column.
+    """True when free-text is the intended modeling representation.
 
-    Mixed tabular cases (Titanic Name/Ticket/Cabin plus Pclass/Age/Sex) must
-    not take the TF-IDF ladder — ``format_tables`` already drops those
-    high-cardinality fields.
+    NLP-primary: ``representation_options`` is set, or ``text_free`` exists
+    without tabular structure hints. Mixed configs (tabular hints plus
+    identifier-like text columns) stay on the tabular ladder; prep drops
+    high-cardinality text so OneHot does not explode.
     """
     hints = _feature_hints(feature_hints)
     options = hints.get("representation_options")
@@ -457,8 +458,8 @@ def format_tables(
             test = test.drop(columns=[target])
 
     drop_from_train = {id_column} if id_column else set()
-    # Keep primary free-text only for NLP-oriented configs; tabular cases drop
-    # high-cardinality text (Name/Ticket/…) so OneHot does not explode.
+    # Keep the primary free-text column only for NLP-oriented configs; otherwise
+    # drop high-cardinality text so OneHot does not explode.
     text_free = list(hints.get("text_free") or [])
     primary_text = text_free[0] if text_free else None
     nlp_primary = is_nlp_primary(hints)

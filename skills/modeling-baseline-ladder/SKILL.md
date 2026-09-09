@@ -5,8 +5,8 @@ Prefer deterministic `ml_tools` baselines over freeform scripts.
 ## Technique order (config-driven)
 
 1. If `feature_hints.representation_options` is set — try those in order (budget: first 3).
-2. Else if NLP-primary (`text_free` without tabular hints such as `categorical` / `numeric_with_missing`) — `tfidf_logreg`.
-3. Else classification — `logistic_regression` → `random_forest` → `hist_gradient_boosting`. Mixed tabular+text (Name/Ticket/Cabin beside Pclass/Age) uses this ladder; high-cardinality text is dropped in prep.
+2. Else if NLP-primary (`text_free` / `text` without tabular hints such as `categorical` / `numeric_with_missing`) — `tfidf_logreg`.
+3. Else classification — `logistic_regression` → `random_forest` → `hist_gradient_boosting`. Mixed tabular+text uses this ladder; high-cardinality text is dropped in prep.
 4. Else regression — `ridge` → `hist_gradient_boosting`.
 
 ## Escalation
