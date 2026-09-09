@@ -108,6 +108,7 @@ def test_create_list_inspect_confirm_and_isolation(tmp_path, monkeypatch):
     yaml_text = next((tmp_path / "users").rglob("case.yaml")).read_text()
     assert "sample_submission_csv" not in yaml_text
     assert "holdout" in yaml_text
+    assert "widgets.csv" in yaml_text
 
 
 def test_path_traversal_rejected(tmp_path, monkeypatch):
@@ -201,3 +202,29 @@ def test_reinspect_after_replace(tmp_path, monkeypatch):
     assert resp.status_code == 200
     names = [f["original_filename"] for f in resp.json()["inspect"]["files"]]
     assert names == ["new.csv"]
+
+
+def test_create_assigns_train_named_file_not_alphabetical_test(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    headers = register(client)
+    train_csv = "UserName,OriginalTweet,Sentiment\n1,hello,Positive\n"
+    test_csv = "UserName,OriginalTweet,Sentiment\n9,holdout,Negative\n"
+    resp = client.post(
+        "/api/cases",
+        data={
+            "title": "covid",
+            "problem_statement": "Classify sentiment expressed in a status.",
+        },
+        files=[
+            ("files", ("Corona_NLP_test.csv", test_csv.encode("utf-8"), "text/csv")),
+            ("files", ("Corona_NLP_train.csv", train_csv.encode("utf-8"), "text/csv")),
+        ],
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    yaml_text = next((tmp_path / "users").rglob("case.yaml")).read_text()
+    assert "Corona_NLP_train.csv" in yaml_text
+    train_line = [ln for ln in yaml_text.splitlines() if ln.strip().startswith("train_csv:")]
+    assert train_line
+    assert "Corona_NLP_train.csv" in train_line[0]
+    assert "Corona_NLP_test.csv" not in train_line[0]

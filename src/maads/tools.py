@@ -222,13 +222,15 @@ def inspect_dataset(
     target_column: str | None = None,
 ) -> dict[str, Any]:
     """Return row counts, dtypes, and train/test column diff for codegen context."""
-    import pandas as pd
-
     train_path = Path(train_csv)
     if not train_path.exists():
         return {"error": f"train file not found: {train_path}"}
 
-    tr = pd.read_csv(train_path, nrows=5000)
+    from maads.schema_inference import read_csv
+
+    tr = read_csv(train_path)
+    if len(tr) > 5000:
+        tr = tr.head(5000)
     out: dict[str, Any] = {
         "train_rows": int(len(tr)),
         "train_columns": list(tr.columns),
@@ -244,7 +246,9 @@ def inspect_dataset(
     if test_csv:
         te_path = Path(test_csv)
         if te_path.exists():
-            te = pd.read_csv(te_path, nrows=5000)
+            te = read_csv(te_path)
+            if len(te) > 5000:
+                te = te.head(5000)
             out["test_rows"] = int(len(te))
             out["test_columns"] = list(te.columns)
             tr_set, te_set = set(tr.columns), set(te.columns)

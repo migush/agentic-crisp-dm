@@ -59,8 +59,24 @@ def validate_phase_3_artifacts(state: "CrispDMState") -> list[str]:
         return errors + [f"could not read train parquet: {exc}"]
 
     if not target:
-        errors.append("target_column is unset and Data Understanding did not record a target")
-    elif target not in df.columns:
+        from maads.schema_inference import infer_column_roles
+
+        guessed = infer_column_roles(
+            columns=list(df.columns),
+            cardinality={c: int(df[c].nunique(dropna=True)) for c in df.columns},
+            dtypes={c: str(df[c].dtype) for c in df.columns},
+            n_rows=int(len(df)),
+            missing={c: int(df[c].isna().sum()) for c in df.columns},
+            problem_type=state.config.problem_type,
+        ).get("target") or ""
+        if guessed and guessed in df.columns:
+            state.adopt_target_if_blank(guessed)
+            target = state.resolved_target()
+        else:
+            errors.append("target_column is unset and Data Understanding did not record a target")
+            return errors
+
+    if target not in df.columns:
         errors.append(f"target '{target}' not in prepared train parquet")
     elif bool(df[target].isna().any()):
         errors.append(f"target '{target}' has missing values after prep")

@@ -107,7 +107,6 @@ def write_case_yaml(
 ) -> Path:
     raw = raw_dir(user_id, case_id)
     sources: list[dict[str, Any]] = []
-    csv_paths: list[Path] = []
     if raw.is_dir():
         for path in sorted(raw.iterdir()):
             if not path.is_file() or path.name.startswith("."):
@@ -121,22 +120,13 @@ def write_case_yaml(
             if role:
                 entry["role"] = role
             sources.append(entry)
-            if path.suffix.lower() in {".csv", ".tsv", ".txt"}:
-                csv_paths.append(path)
 
-    train = None
-    test = None
-    sample = None
-    for src in sources:
-        role = (src.get("role") or "").lower()
-        if role in {"train", "labelled", "primary"} and train is None:
-            train = src["path"]
-        elif role in {"test", "holdout", "unlabelled"} and test is None:
-            test = src["path"]
-        elif role in {"sample_submission", "submission"} and sample is None:
-            sample = src["path"]
-    if train is None and csv_paths:
-        train = repo_relative(csv_paths[0])
+    from maads.schema_inference import infer_source_paths
+
+    inferred = infer_source_paths(sources)
+    train = inferred["train"]
+    test = inferred["test"]
+    sample = inferred["sample_submission"]
 
     pt = problem_type or "classification"
     metric = evaluation_metric or ("rmse" if "regress" in pt.lower() else "accuracy")

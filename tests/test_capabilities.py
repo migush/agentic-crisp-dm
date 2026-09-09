@@ -97,6 +97,67 @@ def test_execution_evidence_collect_with_stub_code(monkeypatch, state, tmp_path)
     assert "initial_data_collection_report" in out
 
 
+def test_de_21_rebinds_test_named_train_csv(tmp_path):
+    from maads.config import CaseConfig, DataPaths, DataSource, SuccessCriterion
+
+    train = tmp_path / "Corona_NLP_train.csv"
+    test = tmp_path / "Corona_NLP_test.csv"
+    train.write_text("UserName,OriginalTweet,Sentiment\n1,hello train,pos\n2,world train,neg\n", encoding="utf-8")
+    test.write_text("UserName,OriginalTweet,Sentiment\n9,hello test,neu\n", encoding="utf-8")
+    cfg = CaseConfig(
+        case_id="covid_like",
+        problem_statement="Classify sentiment.",
+        problem_type="classification",
+        target_column="",
+        id_column="",
+        evaluation_metric="accuracy",
+        data=DataPaths(
+            train_csv=str(test),
+            sources=[
+                DataSource(path=str(test), original_filename="Corona_NLP_test.csv"),
+                DataSource(path=str(train), original_filename="Corona_NLP_train.csv"),
+            ],
+        ),
+        success_criterion=SuccessCriterion(metric="accuracy", threshold=0.0, direction="maximize"),
+    )
+    st = CrispDMState.from_config(cfg)
+    pyexec = PythonExec(workdir=tmp_path / "sandbox")
+    out = execution_evidence(pyexec, st, "2.1", tmp_path)
+    assert Path(st.config.data.train_csv).name == "Corona_NLP_train.csv"
+    assert out["initial_data_collection_report"]["train_rows"] == 2
+    assert "config.data" in (out.get("schema_fields") or [])
+
+
+def test_de_22_infers_blank_target(tmp_path):
+    from maads.config import CaseConfig, DataPaths, SuccessCriterion
+    from maads.capabilities.data_engineer import apply_response as de_apply
+
+    n = 24
+    train = tmp_path / "obs.csv"
+    lines = ["UserName,OriginalTweet,Sentiment"]
+    labels = ["pos", "neg", "neu"]
+    for i in range(n):
+        lines.append(f"{i},status text {i},{labels[i % 3]}")
+    train.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    cfg = CaseConfig(
+        case_id="covid_like",
+        problem_statement="Classify sentiment.",
+        problem_type="classification",
+        target_column="",
+        id_column="",
+        evaluation_metric="accuracy",
+        data=DataPaths(train_csv=str(train)),
+        success_criterion=SuccessCriterion(metric="accuracy", threshold=0.0, direction="maximize"),
+    )
+    st = CrispDMState.from_config(cfg)
+    pyexec = PythonExec(workdir=tmp_path / "sandbox")
+    execution = execution_evidence(pyexec, st, "2.2", tmp_path)
+    delta = de_apply({}, st, "2.2", execution)
+    assert not delta.failed
+    assert st.config.target_column == "Sentiment"
+    assert "config.target_column" in delta.fields_written
+
+
 def test_ds_23_adopts_blank_target_from_exploration(state):
     state.config = state.config.model_copy(update={"target_column": ""})
     delta = ds_apply_response(

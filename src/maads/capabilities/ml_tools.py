@@ -19,12 +19,14 @@ from maads.success_criterion import criterion_direction
 
 
 def _read_table(path: str | Path) -> pd.DataFrame:
+    from maads.schema_inference import read_csv
+
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(f"table not found: {p}")
     if p.suffix == ".parquet":
         return pd.read_parquet(p)
-    return pd.read_csv(p)
+    return read_csv(p)
 
 
 def _write_parquet(df: pd.DataFrame, path: Path) -> str:
