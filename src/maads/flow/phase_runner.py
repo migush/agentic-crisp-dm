@@ -8,7 +8,13 @@ from typing import Any, Protocol
 from maads.deltas import Plan
 from maads.flow.tracing import trace_substep_dispatch, trace_substep_end
 from maads.shutdown import INTERRUPT_HALT_REASON, shutdown_requested
-from maads.state import SUBSTEPS, SUBSTEP_OWNER, CrispDMState, Phase
+from maads.state import (
+    SUBSTEPS,
+    SUBSTEP_OWNER,
+    CrispDMState,
+    Phase,
+    has_actionable_loop_a_trigger,
+)
 from maads.run_deadline import HALT_REASON as DEADLINE_HALT_REASON, deadline_exceeded
 from maads.token_budget import (
     HALT_REASON,
@@ -226,6 +232,10 @@ def can_fire_loop(ctx: RunContext, plan: Plan) -> bool:
         return False
     if plan.loop_label == "B" and ctx.inner_loop_count >= MAX_INNER_LOOP_ITERATIONS:
         return False
+    if plan.loop_label == "C" and any(le.label == "C" for le in ctx.state.loop_history):
+        return False
+    if plan.loop_label == "A" and not has_actionable_loop_a_trigger(ctx.state):
+        return False
     target = plan.loop_to_phase
     if target is None:
         return False
@@ -240,6 +250,10 @@ def loop_block_reason(ctx: RunContext, plan: Plan) -> str:
         return "hard cap exceeded"
     if plan.loop_label == "B" and ctx.inner_loop_count >= MAX_INNER_LOOP_ITERATIONS:
         return "inner Loop B budget exhausted"
+    if plan.loop_label == "C" and any(le.label == "C" for le in ctx.state.loop_history):
+        return "Loop C already fired once"
+    if plan.loop_label == "A" and not has_actionable_loop_a_trigger(ctx.state):
+        return "no actionable Loop A quality trigger"
     target = plan.loop_to_phase
     if target is None:
         return "loop_to_phase is missing"
@@ -377,9 +391,11 @@ def resolve_loop_back(
 ) -> str:
     """Apply ``loop_back`` or convert it to a continue.
 
-    Loop C is only legal at 5.2 (after Evaluate Results). A blocked loop means
-    stop iterating — finish the current phase so a submission can still be
-    produced — rather than halt with recovery-budget exhaustion.
+    Loop C is only legal at 5.2 (after Evaluate Results) and at most once.
+    Loop A requires actionable quality blockers or an explicit domain
+    ``should_trigger`` recommendation. A blocked loop means stop iterating —
+    finish the current phase so a submission can still be produced — rather
+    than halt with recovery-budget exhaustion.
     """
     if plan.loop_label == "C" and ctx.state.substep == "5.1":
         ctx.state.append_log(

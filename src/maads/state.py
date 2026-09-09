@@ -640,6 +640,18 @@ def _domain_artifacts(bu: BusinessUnderstanding) -> dict[str, Any]:
     return artifacts if isinstance(artifacts, dict) else {}
 
 
+def has_actionable_loop_a_trigger(state: "CrispDMState") -> bool:
+    """True when Loop A has a concrete quality or domain trigger.
+
+    Documented missingness (``high_missing`` / ``na_means_absent``) lives in
+    the quality report's tolerable list — empty blockers alone are not enough.
+    """
+    if _quality_blockers(state.du.data_quality_report):
+        return True
+    rec = _domain_artifacts(state.bu).get("loop_a_recommendation") or {}
+    return bool(isinstance(rec, dict) and rec.get("should_trigger"))
+
+
 def _quality_gate_view(state: "CrispDMState") -> dict[str, Any]:
     """Context for PM semantic Loop A at 3.1."""
     fh = state.config.feature_hints or {}

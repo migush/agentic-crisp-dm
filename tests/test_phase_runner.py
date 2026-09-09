@@ -169,6 +169,74 @@ def test_handle_plan_advances_when_phase_1_visit_cap_blocks_loop_c(
     assert any("phase 1 visit cap exhausted" in e.message for e in titanic_state.log)
 
 
+def test_handle_plan_blocks_second_loop_c(titanic_state: CrispDMState, tmp_path: Path):
+    ctx = _ctx(titanic_state, tmp_path)
+    titanic_state.phase = Phase.EVALUATION
+    titanic_state.substep = "5.2"
+    titanic_state.record_loop("C", 5, 1, "first Loop C")
+    plan = Plan(
+        action="loop_back",
+        loop_to_phase=1,
+        loop_label="C",
+        target_substep="1.3",
+        reason="business goal still not met",
+    )
+    route = handle_plan(ctx, plan)
+    assert route is None
+    assert not titanic_state.halted
+    assert len(titanic_state.loop_history) == 1
+    assert any("Loop C already fired once" in e.message for e in titanic_state.log)
+
+
+def test_handle_plan_blocks_loop_a_without_quality_trigger(
+    titanic_state: CrispDMState, tmp_path: Path,
+):
+    ctx = _ctx(titanic_state, tmp_path)
+    titanic_state.phase = Phase.DATA_PREPARATION
+    titanic_state.substep = "3.1"
+    titanic_state.du.data_quality_report = {
+        "blockers": [],
+        "tolerable": ["Cabin: documented high missingness (77% NA)"],
+        "source": "deterministic quality_report",
+    }
+    plan = Plan(
+        action="loop_back",
+        loop_to_phase=1,
+        loop_label="A",
+        target_substep="1.3",
+        reason="PM invented Loop A for tolerable Cabin missingness",
+    )
+    route = handle_plan(ctx, plan)
+    assert route is None
+    assert not titanic_state.halted
+    assert not titanic_state.loop_history
+    assert any("no actionable Loop A" in e.message for e in titanic_state.log)
+
+
+def test_handle_plan_allows_loop_a_with_blockers(
+    titanic_state: CrispDMState, tmp_path: Path,
+):
+    ctx = _ctx(titanic_state, tmp_path)
+    titanic_state.phase = Phase.DATA_PREPARATION
+    titanic_state.substep = "3.1"
+    titanic_state.du.data_quality_report = {
+        "blockers": ["missing target column 'Survived'"],
+        "tolerable": [],
+        "source": "deterministic quality_report",
+    }
+    plan = Plan(
+        action="loop_back",
+        loop_to_phase=1,
+        loop_label="A",
+        target_substep="1.3",
+        reason="actionable quality blocker",
+    )
+    route = handle_plan(ctx, plan)
+    assert route == "phase_1"
+    assert titanic_state.phase == Phase.BUSINESS_UNDERSTANDING
+    assert titanic_state.loop_history[-1].label == "A"
+
+
 def test_completion_halt_reason_without_ml_success(titanic_state: CrispDMState):
     titanic_state.phase = Phase.DEPLOYMENT
     titanic_state.substep = "6.4"
