@@ -41,6 +41,43 @@ def _feature_hints(hints: dict[str, Any] | None) -> dict[str, Any]:
     return hints if isinstance(hints, dict) else {}
 
 
+_TABULAR_HINT_KEYS = (
+    "categorical",
+    "numeric_with_missing",
+    "ordinal",
+    "ordinal_string_encoded",
+)
+
+
+def is_nlp_primary(feature_hints: dict[str, Any] | None) -> bool:
+    """True when free-text is the modeling representation, not a side column.
+
+    Mixed tabular cases (Titanic Name/Ticket/Cabin plus Pclass/Age/Sex) must
+    not take the TF-IDF ladder — ``format_tables`` already drops those
+    high-cardinality fields.
+    """
+    hints = _feature_hints(feature_hints)
+    options = hints.get("representation_options")
+    if isinstance(options, list) and options:
+        return True
+    text_free = list(hints.get("text_free") or hints.get("text") or [])
+    if not text_free:
+        return False
+    return not any(hints.get(k) for k in _TABULAR_HINT_KEYS)
+
+
+def documented_missing_columns(feature_hints: dict[str, Any] | None) -> list[str]:
+    """Columns whose NA is documented (``na_means_absent`` or ``high_missing``)."""
+    hints = _feature_hints(feature_hints)
+    seen: list[str] = []
+    for key in ("na_means_absent", "high_missing"):
+        for col in hints.get(key) or []:
+            name = str(col)
+            if name and name not in seen:
+                seen.append(name)
+    return seen
+
+
 # ── Profiling / EDA ─────────────────────────────────────────────────────────
 
 
@@ -51,6 +88,7 @@ def profile_dataset(
     target: str | None = None,
     id_column: str | None = None,
     na_means_absent: Sequence[str] | None = None,
+    high_missing: Sequence[str] | None = None,
     max_rows: int | None = None,
 ) -> dict[str, Any]:
     """Full measured profile used by DU substeps 2.1–2.4 / 2.3."""
@@ -103,6 +141,7 @@ def profile_dataset(
         "target": target_info or (target or None),
         "correlations_with_target": correlations,
         "na_means_absent": list(na_means_absent or []),
+        "high_missing": list(high_missing or []),
         "source": "deterministic profile_dataset",
     }
 
@@ -171,8 +210,14 @@ def quality_report_from_profile(
     *,
     target: str,
     na_means_absent: Sequence[str] | None = None,
+    high_missing: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     absent = set(na_means_absent or profile.get("na_means_absent") or [])
+    high = set(high_missing or profile.get("high_missing") or [])
+    documented = set(documented_missing_columns({
+        "na_means_absent": list(absent),
+        "high_missing": list(high),
+    }))
     blockers: list[str] = []
     tolerable: list[str] = []
     n_rows = max(int(profile.get("n_rows") or 1), 1)
@@ -198,8 +243,11 @@ def quality_report_from_profile(
         if col == target or not isinstance(count, int) or count <= 0:
             continue
         rate = count / n_rows
-        if col in absent:
-            tolerable.append(f"{col}: structural absence (no feature) — {rate:.0%} NA")
+        if col in documented:
+            if col in absent:
+                tolerable.append(f"{col}: structural absence (no feature) — {rate:.0%} NA")
+            else:
+                tolerable.append(f"{col}: documented high missingness ({rate:.0%} NA)")
         elif rate >= 0.6:
             blockers.append(f"undocumented high missingness on '{col}' ({rate:.0%})")
         elif rate >= 0.05:
@@ -413,18 +461,7 @@ def format_tables(
     # high-cardinality text (Name/Ticket/…) so OneHot does not explode.
     text_free = list(hints.get("text_free") or [])
     primary_text = text_free[0] if text_free else None
-    tabular_hints = any(
-        hints.get(k)
-        for k in (
-            "categorical",
-            "numeric_with_missing",
-            "ordinal",
-            "ordinal_string_encoded",
-        )
-    )
-    nlp_primary = bool(hints.get("representation_options")) or (
-        bool(text_free) and not tabular_hints
-    )
+    nlp_primary = is_nlp_primary(hints)
     for col in text_free:
         if nlp_primary and col == primary_text:
             continue
@@ -537,7 +574,7 @@ def baseline_techniques_for(
     options = hints.get("representation_options")
     if isinstance(options, list) and options:
         techniques = [str(x) for x in options]
-    elif hints.get("text_free"):
+    elif is_nlp_primary(hints):
         techniques = ["tfidf_logreg"]
     elif problem_type == "regression":
         techniques = ["ridge", "hist_gradient_boosting"]
@@ -937,7 +974,7 @@ def assess_fitted_experiment(
     if pipe is None:
         text_col = _primary_text_col(hints, list(X.columns))
         tech = technique.lower()
-        if tech.startswith("tfidf") or hints.get("text_free"):
+        if tech.startswith("tfidf") or tech.startswith("openai"):
             n_classes = len(set(y.tolist())) if not is_reg else 2
             pipe = _build_text_pipeline(
                 X, primary_text=text_col, problem_type=problem_type, n_classes=n_classes,

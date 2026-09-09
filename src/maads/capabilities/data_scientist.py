@@ -46,8 +46,7 @@ def _primary_text_column_name(state: CrispDMState, columns: list[str] | None = N
 
 
 def _text_modeling_hint(state: CrispDMState) -> str:
-    text_free = (state.config.feature_hints or {}).get("text_free") or []
-    if not text_free:
+    if not _is_text_modeling_case(state):
         return ""
     return (
         " Text modeling: use the deterministic tfidf_logreg baseline "
@@ -56,7 +55,7 @@ def _text_modeling_hint(state: CrispDMState) -> str:
 
 
 def _is_text_modeling_case(state: CrispDMState) -> bool:
-    return bool((state.config.feature_hints or {}).get("text_free"))
+    return ml_tools.is_nlp_primary(state.config.feature_hints or {})
 
 
 def _run_text_model_baseline(pyexec, header_vars: dict[str, Any]) -> dict[str, Any]:

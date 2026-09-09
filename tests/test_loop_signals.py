@@ -29,29 +29,22 @@ def state() -> CrispDMState:
     return CrispDMState.from_config(cfg)
 
 
-def test_real_quality_blockers_reach_pm_view(state: CrispDMState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    quality_code = '''```python
-import pandas as pd, json
-df = pd.read_csv(TRAIN_CSV)
-blockers = []
-tolerable = []
-if df[TARGET].isna().any():
-    blockers.append("target missing")
-for c in df.columns:
-    if df[c].isna().mean() > 0.4:
-        blockers.append(f"{c}: high missing")
-print(json.dumps({"blockers": blockers, "tolerable": tolerable}))
-```'''
-    monkeypatch.setattr("maads.crew.run_text_task", lambda *a, **k: quality_code)
+def test_documented_cabin_missingness_reaches_pm_quality_gate(
+    state: CrispDMState, tmp_path: Path,
+):
     state.substep = "2.4"
     de = DataEngineerAgent(artifact_dir=tmp_path)
     delta = de.act(state)
     assert not delta.failed, delta.notes
-    assert state.du.data_quality_report
-    blockers = state.du.data_quality_report.get("blockers", [])
-    assert blockers
+    report = state.du.data_quality_report or {}
+    blockers = report.get("blockers") or []
+    tolerable = report.get("tolerable") or []
+    assert not any("Cabin" in b for b in blockers)
+    assert any("Cabin" in t for t in tolerable)
     pm_view = state.view_for("pm")
-    assert pm_view["latest_quality_blockers"]
+    gate = pm_view["quality_gate"]
+    assert "Cabin" in gate["na_means_absent"]
+    assert "Cabin" in gate["high_missing"]
     assert "quality_gate" in pm_view
 
 
@@ -82,6 +75,7 @@ def test_fire_loop_tolerates_stringy_phase(tmp_path: Path, state: CrispDMState):
 def test_fire_loop_clears_validator_findings(tmp_path: Path, state: CrispDMState):
     ctx = make_run_context(state, tmp_path)
     state.validator_findings = ["some deficit"]
+    state.ev.assessment_of_dm_results = {"meets": False, "cv_score": 0.70}
     state.phase = Phase.MODELING
     apply_loop(
         ctx,
@@ -93,6 +87,7 @@ def test_fire_loop_clears_validator_findings(tmp_path: Path, state: CrispDMState
         ),
     )
     assert state.validator_findings == []
+    assert state.ev.assessment_of_dm_results is None
     assert state.loop_history and state.loop_history[-1].label == "B"
 
 
@@ -121,6 +116,29 @@ def test_business_goal_met_unknown_at_5_1_before_assessment(state: CrispDMState)
     state.ev.assessment_of_dm_results = None
     pm_view = state.view_for("pm")
     assert pm_view["business_goal_met"] is None
+    assert state._suggested_pm_action() is None
+
+
+def test_business_goal_met_unknown_at_5_1_with_stale_assessment(state: CrispDMState):
+    state.substep = "5.1"
+    state.ev.assessment_of_dm_results = {
+        "meets": False,
+        "cv_score": 0.70,
+        "threshold": 0.77,
+    }
+    pm_view = state.view_for("pm")
+    assert pm_view["business_goal_met"] is None
+    assert state._suggested_pm_action() is None
+
+
+def test_loop_c_not_suggested_after_already_fired(state: CrispDMState):
+    state.substep = "5.2"
+    state.ev.assessment_of_dm_results = {
+        "meets": False,
+        "cv_score": 0.70,
+        "threshold": 0.77,
+    }
+    state.record_loop("C", 5, 1, "first Loop C")
     assert state._suggested_pm_action() is None
 
 

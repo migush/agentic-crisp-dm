@@ -426,6 +426,9 @@ class CrispDMState(BaseModel):
                         "action": "halt",
                         "reason": "business goal not met and Loop A already fired twice",
                     }
+                loop_c_count = sum(1 for le in self.loop_history if le.label == "C")
+                if loop_c_count >= 1:
+                    return None
                 return {
                     "action": "loop_back",
                     "loop_label": "C",
@@ -464,18 +467,18 @@ class CrispDMState(BaseModel):
             base["degraded_flags"] = list(self.degraded_flags)
             base["suggested_action"] = self._suggested_pm_action()
             assessment = self.ev.assessment_of_dm_results
-            if assessment is None:
-                if self.substep in {"5.1"}:
-                    base["business_goal_met"] = None
-                else:
-                    cv = self.md.chosen_model.cv_score if self.md.chosen_model else None
-                    sc = self.config.success_criterion
-                    dir_ = criterion_direction(sc.metric, sc.direction)
-                    base["business_goal_met"] = (
-                        score_meets_threshold(cv, sc.threshold, direction=dir_)
-                        if cv is not None
-                        else None
-                    )
+            if self.substep == "5.1":
+                # Checkpoint 5.1 runs before Evaluate Results this visit.
+                base["business_goal_met"] = None
+            elif assessment is None:
+                cv = self.md.chosen_model.cv_score if self.md.chosen_model else None
+                sc = self.config.success_criterion
+                dir_ = criterion_direction(sc.metric, sc.direction)
+                base["business_goal_met"] = (
+                    score_meets_threshold(cv, sc.threshold, direction=dir_)
+                    if cv is not None
+                    else None
+                )
             else:
                 base["business_goal_met"] = assessment_meets(assessment)
         elif agent_name == "domain":
@@ -644,6 +647,7 @@ def _quality_gate_view(state: "CrispDMState") -> dict[str, Any]:
     return {
         "data_quality_report": state.du.data_quality_report,
         "na_means_absent": list(fh.get("na_means_absent") or []),
+        "high_missing": list(fh.get("high_missing") or []),
         "domain_data_quality_flags": artifacts.get("domain_data_quality_flags") or [],
         "loop_a_recommendation": artifacts.get("loop_a_recommendation"),
         "data_mining_goals": state.bu.data_mining_goals,

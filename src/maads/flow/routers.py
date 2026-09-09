@@ -4,12 +4,9 @@ from __future__ import annotations
 from maads.deltas import Plan
 from maads.flow.phase_runner import (
     RunContext,
-    apply_loop,
-    can_fire_loop,
     deployment_review_pending,
     force_halt,
-    loop_block_reason,
-    loop_route_for_phase,
+    resolve_loop_back,
     resolve_plan,
 )
 
@@ -22,13 +19,7 @@ def route_from_plan(ctx: RunContext, plan: Plan) -> str:
         force_halt(ctx.state, plan.reason or "PM halt")
         return "halt"
     if plan.action == "loop_back":
-        if plan.loop_to_phase and can_fire_loop(ctx, plan):
-            apply_loop(ctx, plan, log_source="flow")
-            return loop_route_for_phase(int(plan.loop_to_phase))
-        reason = loop_block_reason(ctx, plan)
-        ctx.state.append_log("flow", f"loop blocked by guard: {reason}", level="warn")
-        force_halt(ctx.state, f"recovery budget exhausted: {reason}")
-        return "halt"
+        return resolve_loop_back(ctx, plan, log_source="flow")
     return "continue"
 
 

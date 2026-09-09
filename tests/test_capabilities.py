@@ -135,6 +135,55 @@ def test_text_modeling_hint_for_text_cases(state):
     assert "ml_tools" in hint
 
 
+def test_text_modeling_hint_skipped_for_titanic_mixed_tabular(state):
+    assert _text_modeling_hint(state) == ""
+
+
+def test_baseline_techniques_titanic_is_tabular():
+    from maads.capabilities.ml_tools import baseline_techniques_for
+
+    cfg = load_case_config(resolve_path("configs/titanic.yaml"))
+    techniques = baseline_techniques_for(
+        problem_type=cfg.problem_type,
+        feature_hints=cfg.feature_hints,
+    )
+    assert techniques[0] == "logistic_regression"
+    assert "tfidf_logreg" not in techniques
+
+
+def test_baseline_techniques_disaster_tweets_is_tfidf():
+    from maads.capabilities.ml_tools import baseline_techniques_for
+
+    cfg = load_case_config(resolve_path("configs/disaster_tweets.yaml"))
+    techniques = baseline_techniques_for(
+        problem_type=cfg.problem_type,
+        feature_hints=cfg.feature_hints,
+    )
+    assert techniques[0] == "tfidf_logreg"
+
+
+def test_quality_report_documents_high_missing():
+    from maads.capabilities.ml_tools import quality_report_from_profile
+
+    profile = {
+        "n_rows": 891,
+        "columns": ["Survived", "Cabin", "Age"],
+        "missing": {"Cabin": 687, "Age": 177},
+        "constant_columns": [],
+        "duplicate_id_count": 0,
+        "target": {"name": "Survived", "missing": 0},
+    }
+    report = quality_report_from_profile(
+        profile,
+        target="Survived",
+        na_means_absent=["Cabin"],
+        high_missing=["Cabin"],
+    )
+    assert not any("Cabin" in b for b in report["blockers"])
+    assert any("Cabin" in t for t in report["tolerable"])
+    assert any("Age" in t for t in report["tolerable"])
+
+
 def test_select_best_model_minimizes_rmse():
     from maads.capabilities.ml_tools import select_best_model
     from maads.state import ModelRun

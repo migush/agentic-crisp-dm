@@ -25,6 +25,7 @@ feature_hints:
   ordinal: []
   text_free: [Name, Ticket, Cabin]
   high_missing: [Cabin]
+  na_means_absent: [Cabin]
 
 # Deliberately unreachable threshold -> the 5 -> 1 / 4 -> 3 loops must fire.
 success_criterion:

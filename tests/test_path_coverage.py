@@ -231,7 +231,7 @@ def test_loop_blocked_when_cap_reached(mock_llm, titanic_state: CrispDMState, tm
     assert not titanic_state.loop_history
     assert any("loop blocked" in e.message for e in titanic_state.log)
     assert titanic_state.halted
-    assert "recovery budget exhausted" in (titanic_state.halt_reason or "")
+    assert titanic_state.halt_reason == "stop"
 
 
 @patch("maads.agents.run_json_task")
