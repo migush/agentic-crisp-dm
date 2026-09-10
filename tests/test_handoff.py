@@ -135,6 +135,26 @@ def test_bundle_notebook_has_no_repo_dependency(tmp_path: Path):
     assert notebook["metadata"]["maads"]["handoff_profile"] == "standard"
 
 
+def test_bundle_notebook_tfidf_for_nlp_classification(tmp_path: Path):
+    run_dir = tmp_path / "runs" / "bundle-nlp"
+    ensure_run_layout(run_dir, run_id="bundle-nlp", case_id="titanic")
+    state = _minimal_state("configs/titanic.yaml", run_dir)
+    state.config.problem_type = "classification"
+    state.config.feature_hints = {
+        "text_free": ["text"],
+        "representation_options": ["tfidf_logreg"],
+    }
+    state.md.chosen_model.technique = "tfidf_logreg"
+    paths = RunPaths(run_dir)
+    context = build_workbook_context(state, paths)
+    notebook = render_bundle_workbook_ipynb(context, state, paths)
+    sources = "".join("".join(c.get("source") or []) for c in notebook["cells"])
+    assert "TfidfVectorizer" in sources
+    assert "TECHNIQUE = 'tfidf_logreg'" in sources
+    assert "SAMPLE_SUBMISSION.is_file()" in sources
+    assert "_read_csv_any" in sources
+
+
 def test_write_handoff_bundle_writes_zip(tmp_path: Path):
     run_dir = tmp_path / "runs" / "write-handoff"
     ensure_run_layout(run_dir, run_id="write-handoff", case_id="house_prices")

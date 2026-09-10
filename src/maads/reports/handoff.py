@@ -190,7 +190,16 @@ def _bundle_eda_cell_source() -> str:
     return '''"""Optional: quick look at raw training data."""
 import pandas as pd
 
-df = pd.read_csv(DATA_TRAIN_CSV)
+def _read_csv_any(path):
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    return pd.read_csv(path, encoding="latin-1")
+
+print(DATA_TRAIN_CSV)
+df = _read_csv_any(DATA_TRAIN_CSV)
 print(f"Shape: {df.shape}")
 if TARGET in df.columns:
   print(df[TARGET].describe())
