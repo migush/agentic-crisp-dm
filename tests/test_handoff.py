@@ -137,9 +137,13 @@ def test_bundle_notebook_has_no_repo_dependency(tmp_path: Path):
 
 def test_bundle_notebook_tfidf_for_nlp_classification(tmp_path: Path):
     run_dir = tmp_path / "runs" / "bundle-nlp"
-    ensure_run_layout(run_dir, run_id="bundle-nlp", case_id="disaster_tweets")
-    state = _minimal_state("configs/disaster_tweets.yaml", run_dir)
+    ensure_run_layout(run_dir, run_id="bundle-nlp", case_id="titanic")
+    state = _minimal_state("configs/titanic.yaml", run_dir)
     state.config.problem_type = "classification"
+    state.config.feature_hints = {
+        "text_free": ["text"],
+        "representation_options": ["tfidf_logreg"],
+    }
     state.md.chosen_model.technique = "tfidf_logreg"
     paths = RunPaths(run_dir)
     context = build_workbook_context(state, paths)

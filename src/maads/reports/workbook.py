@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from maads.artifact_paths import RunPaths
+from maads.capabilities.ml_tools import is_nlp_primary
 from maads.conclusions import build_conclusions_summary
 from maads.outcome import ml_outcome_deficits, ml_run_succeeded, workflow_complete
 from maads.paths import repo_root
@@ -590,22 +591,15 @@ def _is_text_technique(name: str) -> bool:
     return tech in _TEXT_TECHNIQUES or tech.startswith("tfidf")
 
 
-def _hints_want_text(feature_hints: dict[str, Any] | None) -> bool:
-    hints = feature_hints or {}
-    options = hints.get("representation_options") or []
-    if any("tfidf" in str(x).lower() or "embed" in str(x).lower() for x in options):
-        return True
-    text_free = list(hints.get("text_free") or hints.get("text") or [])
-    if not text_free:
-        return False
-    tabular_keys = ("categorical", "numeric_with_missing", "ordinal", "ordinal_string_encoded")
-    return not any(hints.get(k) for k in tabular_keys)
-
-
 def _default_template_technique(state: CrispDMState, technique: str) -> str:
+    """Fallback estimator name from this run's problem_type / hints / technique.
+
+    Never branches on ``case_id``. NLP vs tabular follows the same signals
+    the modeling tools used (``is_nlp_primary``, chosen technique).
+    """
     if state.config.problem_type == "regression":
         return "ridge"
-    if _is_text_technique(technique) or _hints_want_text(state.config.feature_hints):
+    if _is_text_technique(technique) or is_nlp_primary(state.config.feature_hints):
         return "tfidf_logreg"
     return "logistic_regression"
 
@@ -621,10 +615,11 @@ def _canonical_pipeline_markdown(state: CrispDMState, *, from_agent_script: bool
         )
     return (
         "## Canonical pipeline (human continuation)\n\n"
-        f"No 4.3 sandbox script was captured for this run. The simplified sklearn "
-        f"template below uses **{technique}** as a starting point only — it may "
-        "not match what the agent chose or ran. Prefer any 4.3 script in the "
-        "Modeling section above when present.\n"
+        "No 4.3 sandbox script was captured (modeling used deterministic tools). "
+        "The cell below reconstructs a sklearn Pipeline from **this run's** "
+        f"chosen technique (**{technique}**), `problem_type`, and `feature_hints` "
+        "— not a per-case recipe. Prefer any 4.3 script in the Modeling section "
+        "above when present.\n"
     )
 
 
@@ -683,7 +678,7 @@ if use_log_target:
     y_pred = np.maximum(y_pred, 0)
 '''
     else:
-        # binary_classification, classification, multiclass — hosted cases use "classification"
+        # Any non-regression problem_type (binary_classification, classification, …)
         estimator_block = '''\
 from sklearn.ensemble import (
     GradientBoostingClassifier,
@@ -718,9 +713,9 @@ def _canonical_pipeline_template_code(state: CrispDMState) -> str:
     estimator_block, predict_fn = _template_estimator_block(problem)
     default = _default_template_technique(state, technique)
     note = (
-        "# NOTE: no 4.3 sandbox script captured; template may not match agent choice\n"
+        "# NOTE: reconstructed from this run's chosen technique, problem_type, and feature_hints\n"
         if raw_technique != "unspecified"
-        else "# NOTE: no 4.3 sandbox script captured; using simplified template\n"
+        else "# NOTE: no chosen technique stored; reconstructed from problem_type and feature_hints\n"
     )
     return f'''\
 """Fit one sklearn Pipeline, persist model.joblib, and write a submission."""

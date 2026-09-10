@@ -310,10 +310,15 @@ def test_classification_template_registers_logistic_regression(tmp_path: Path):
     assert '"logistic_regression":' in code or "'logistic_regression':" in code
 
 
-def test_tfidf_template_keeps_text_column(tmp_path: Path):
+def test_tfidf_reconstruction_keeps_text_column(tmp_path: Path):
     run_dir = tmp_path / "runs" / "tfidf-nb"
-    ensure_run_layout(run_dir, run_id="tfidf-nb", case_id="disaster_tweets")
-    state = _minimal_state("configs/disaster_tweets.yaml", run_dir)
+    ensure_run_layout(run_dir, run_id="tfidf-nb", case_id="titanic")
+    state = _minimal_state("configs/titanic.yaml", run_dir)
+    state.config.problem_type = "classification"
+    state.config.feature_hints = {
+        "text_free": ["text"],
+        "representation_options": ["tfidf_logreg"],
+    }
     state.md.chosen_model.technique = "tfidf_logreg"
     code = _canonical_pipeline_template_code(state)
     assert "TfidfVectorizer" in code
@@ -323,15 +328,15 @@ def test_tfidf_template_keeps_text_column(tmp_path: Path):
     assert "SAMPLE_SUBMISSION.is_file()" in code
 
 
-def test_generated_nlp_template_fits_without_sample_submission(tmp_path: Path):
-    """Hosted covid-style: classification + tfidf_logreg + blank sample_submission."""
+def test_generated_nlp_pipeline_fits_without_sample_submission(tmp_path: Path):
+    """classification + text_free + tfidf_logreg + blank sample_submission (no case_id)."""
     import pandas as pd
 
-    run_dir = tmp_path / "runs" / "covid-like"
-    ensure_run_layout(run_dir, run_id="covid-like", case_id="titanic")
+    run_dir = tmp_path / "runs" / "nlp-cls"
+    ensure_run_layout(run_dir, run_id="nlp-cls", case_id="titanic")
     state = _minimal_state("configs/titanic.yaml", run_dir)
     state.config.problem_type = "classification"
-    state.config.target_column = "Sentiment"
+    state.config.target_column = "label"
     state.config.id_column = "id"
     state.config.feature_hints = {
         "text_free": ["text"],
@@ -354,7 +359,7 @@ def test_generated_nlp_template_fits_without_sample_submission(tmp_path: Path):
             "neutral update today news update",
             "neutral update today news update",
         ],
-        "Sentiment": ["Positive", "Positive", "Negative", "Negative", "Neutral", "Neutral"],
+        "label": ["a", "a", "b", "b", "c", "c"],
     })
     test = pd.DataFrame({
         "id": [10, 11],
@@ -375,7 +380,7 @@ def test_generated_nlp_template_fits_without_sample_submission(tmp_path: Path):
         "DATA_TRAIN_CSV": data_dir / "train.csv",
         "DATA_TEST_CSV": data_dir / "test.csv",
         "SAMPLE_SUBMISSION": data_dir,
-        "TARGET": "Sentiment",
+        "TARGET": "label",
         "ID_COL": "id",
         "PROBLEM_TYPE": "classification",
         "EVAL_METRIC": "accuracy",
@@ -386,5 +391,5 @@ def test_generated_nlp_template_fits_without_sample_submission(tmp_path: Path):
     assert (out / "model.joblib").is_file()
     assert sub.is_file()
     written = pd.read_csv(sub)
-    assert list(written.columns) == ["id", "Sentiment"]
+    assert list(written.columns) == ["id", "label"]
     assert len(written) == 2
